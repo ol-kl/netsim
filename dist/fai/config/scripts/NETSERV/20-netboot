@@ -1,0 +1,42 @@
+#!/bin/bash
+# Preparation of tftp and www directories with files required for clients netbooting
+#set -x #debugging
+
+SCR_NAME=$(basename $0)
+
+err() {
+	echo "Error in ${SCR_NAME}: $1"
+	exit 1
+}
+
+[[ $(ls -l "${FAI_ROOT}"/boot/vmlinuz* | wc -l) -ne 1 ]] && \
+	err "More than one version of vmlinuz exists in <chroot>/boot,
+which one to copy into netboot directory of tftp?"
+
+[[ $(ls -l "${FAI_ROOT}"/boot/initrd.img* | wc -l) -ne 1 ]] && \
+	err "More than one version of initrd.img exists in <chroot>/boot,
+which one to copy into netboot directory of tftp?"
+
+ln -s /boot/$(basename "${FAI_ROOT}"/boot/vmlinuz*) "${FAI_ROOT}"/srv/tftp/vmlinuz
+ln -s /boot/$(basename "${FAI_ROOT}"/boot/initrd.img*) "${FAI_ROOT}"/srv/tftp/initrd.img
+
+if [ -n "${NETPROBE_IMG}" ] && [ -e "${NETPROBE_IMG}" ]; then
+	cp "${NETPROBE_IMG}" "${FAI_ROOT}"/var/www
+else err "Either \${NETPROBE_IMG} is not set (it's ${NETPROBE_IMG}) or file doesn't exist"
+fi
+
+echo "Adjusting squashfs file name reference in pxeconfig directory"
+
+sed -i --follow-symlinks "s/name_of_squashfs/$(basename ${NETPROBE_IMG})/" "${FAI_ROOT}"/srv/tftp/pxelinux.cfg/client || err "sed is broken"
+
+sed -i --follow-symlinks "s/name_of_squashfs/$(basename ${NETPROBE_IMG})/" "${FAI_ROOT}"/srv/tftp/pxelinux.cfg/server|| err "sed is broken"
+
+cat "${FAI_ROOT}"/srv/tftp/pxelinux.cfg/client | grep $(basename ${NETPROBE_IMG}) &>/dev/null || err "netboot config file for client failed to be modified,
+client will not be able to download squashfs image"
+
+cat "${FAI_ROOT}"/srv/tftp/pxelinux.cfg/server | grep $(basename ${NETPROBE_IMG}) &>/dev/null || err "netboot config file for server failed to be modified,
+server will not be able to download squashfs image"
+
+echo "Script is done successfully"
+
+exit 0

@@ -1,0 +1,12 @@
+#!/bin/bash
+
+set -u
+set -e
+
+fcopy -B /etc/initramfs-tools/hooks/vlan
+fcopy -B /etc/initramfs-tools/modules
+fcopy -B /etc/initramfs-tools/scripts/init-premount/vlan
+fcopy -B /etc/initramfs-tools/scripts/live-premount/select_eth_device
+
+## END OF FILE #################################################################
+# vim:ft=sh expandtab ai tw=80 tabstop=4 shiftwidth=3

@@ -1,0 +1,23 @@
+Content of the directory and description:
+fcgi_serv_cntl.sh		-wrapper to run fcgi backend and application
+				 Usage: fcgi_serv_cntl.sh (start|stop|restart) 
+				 Notice: fcgi gateway is launched with "www-data" user, so that
+				 lighhtpd server (working under "www-data" user as well) is able
+				 to read/write socket file created by fastCGI gateway.
+start_tstat.sh			-simple script to start tstat in a fast way, in order to change
+				 tstat properties, one should correct the script (keys and arguments
+				 to tstat command) and also two following config files (if needed)
+nets.conf			-instruction for tstat which nets are to be treated as internal ones
+rrd.conf			-instructions for tstat which rrd DB files (what sort of measurments)
+				 are to be created (they are stored in /var/www/databases, can be 
+				 changed in start_tstat.sh script)
+tstat-2.3			-source files (with bugfixes) of tstat. These sources must be complied
+				 and installed manually for tstat to work.
+				 #TODO: make this automatically. How - read README file TODO section in
+				 ./python_dist
+python_dist			-python3.3 source files to be compiled, WSGI module and its installation script
+WSGI_serv_py3/			-WSGI compliant fastcgi interface implementation for Python 3.2.3 with bugfixes. To install,
+				 run "setup.py install". Folder WSGI_serv_py3/flup/server/ contains diff files to reflect introduced 
+				 changes compared to original. This Python egg installation may install original unmodified source
+				 files, therefore one should check them for correspondence to those in flup/server sub dir, otherwise
+				 apply diff files provided in that dir to them (fcgi_base.py.diff, threadpool.py.diff).

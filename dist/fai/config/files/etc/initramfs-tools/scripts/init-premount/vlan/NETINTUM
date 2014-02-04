@@ -1,0 +1,127 @@
+#!/bin/sh
+
+PREREQ=""
+
+prereqs()
+{
+	echo "$PREREQ"
+}
+
+case $1 in
+# get pre-requisites
+prereqs)
+	prereqs
+	exit 0
+	;;
+esac
+
+do_vlan=''
+do_vlans=''
+do_vbridge=''
+for ARGUMENT in $(cat /proc/cmdline); do
+	case "${ARGUMENT}" in
+		ethdevice=*)
+			do_vlan=Y
+			ethdevice=${ARGUMENT#ethdevice=}
+			;;
+		vlan_native_*=*)
+			vn=${ARGUMENT#vlan_native_}
+			VLANS_NATIVE="$VLANS_NATIVE $vn"
+			;;
+		vlans_*=*)
+			do_vlans=Y
+			v=${ARGUMENT#vlans_}
+			VLANS="$VLANS $v"
+			;;
+		vlan_bridge*)
+			do_vbridge=Y
+			;;
+	esac
+done
+
+[ -n "$do_vlan" ] || exit 0
+
+if [ -n "$do_vlans" ]; then
+	modprobe 8021q
+	if [ -n "$do_vbridge" ]; then
+		vconfig set_name_type DEV_PLUS_VID_NO_PAD
+	else
+		vconfig set_name_type VLAN_PLUS_VID_NO_PAD
+	fi
+fi
+
+[ -n "$do_vbridge" ] && modprobe bridge
+
+# busybox brctl does not do setfd ...
+BRCTL="/usr/sbin/brctl"
+
+sysctl -w net.ipv6.conf.all.accept_ra=0
+sysctl -w net.ipv6.conf.default.accept_ra=0
+
+for device in /sys/class/net/*; do
+	dev=${device##*/}
+	case "$dev" in
+		lo|vlan*|brv*|*.*) continue ;;
+	esac
+	if  [ -n "$do_vbridge" ]; then
+		for v in $VLANS_NATIVE; do
+			vdev=${v%%=*}
+			if [ "$vdev" == "$dev" ]; then
+				vid="${v#*=}"
+				sysctl -w "net.ipv6.conf.${dev}.accept_ra=0"
+				ip link set "$dev" up
+				if [ ! -e "/sys/class/net/brv$vid" ]; then
+					$BRCTL addbr "brv$vid"
+					ip link set "brv$vid" up
+					[ "brv$vid" == "$ethdevice" ] && \
+						sysctl -w "net.ipv6.conf.brv${vid}.accept_ra=1"
+					$BRCTL setfd "brv$vid" 0
+					$BRCTL sethello "brv$vid" 0
+					$BRCTL stp "brv$vid" off
+				fi
+				$BRCTL addif "brv$vid" "$dev"
+				break
+			fi
+		done
+	fi
+	if [ -n "$do_vlans" ]; then 
+		for v in $VLANS; do
+			vdev=${v%%=*}
+			if [ "$vdev" == "$dev" ]; then
+				[ "$dev" == "$ethdevice" ] || \
+					sysctl -w "net.ipv6.conf.${dev}.accept_ra=0"
+				ip link set "$dev" up
+				for vid in $(echo "${v#*=}" | tr ',' ' '); do
+					vconfig add "$dev" "$vid"
+					if [ -n "$do_vbridge" ]; then
+						vdevname="${dev}.${vid}"
+						vdevsysc="${dev}/${vid}"
+						# busybox sysctl:
+						vdevsysc="${dev}.${vid}"
+					else
+						vdevname="vlan$vid"
+						vdevsysc="vlan$vid"
+					fi
+					if [ "${vdevname}" != "$ethdevice" ]; then
+						sysctl -w "net.ipv6.conf.${vdevsysc}.accept_ra=0"
+					fi
+					ip link set "${vdevname}" up
+					if [ -n "$do_vbridge" ]; then
+						if [ ! -e "/sys/class/net/brv$vid" ]; then
+							$BRCTL addbr "brv$vid"
+							[ "brv$vid" == "$ethdevice" ] || \
+								sysctl -w "net.ipv6.conf.brv${vid}.accept_ra=0"
+							ip link set "brv$vid" up
+							$BRCTL setfd "brv$vid" 0
+							$BRCTL sethello "brv$vid" 0
+							$BRCTL stp "brv$vid" off
+						fi
+						$BRCTL addif "brv$vid" "$vdevname"
+					fi
+				done
+			fi
+		done
+	fi
+done
+
+exit 0

@@ -1,0 +1,4 @@
+tzdata	tzdata/Zones/Etc	select	UTC
+tzdata	tzdata/Zones/Europe	select	Berlin
+tzdata	tzdata/Areas    	select	Europe
+postfix	postfix/main_mailer_type	select	No configuration

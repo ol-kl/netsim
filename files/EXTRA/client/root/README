@@ -1,0 +1,7 @@
+benchmark.sh* 	-script to initiate TCP traffic flows, works till preconfigured 
+		 time is reached. It downloads dummy files (must be in /var/www folder) 
+		 onto itself, traffic follows a loop going through router/netboot server
+		 and returning back on this device. Egress and ingress interfaces differ
+		 naturally.
+		 Script is rather short, so take a look into it to better grasp an idea what's
+		 going on in there.

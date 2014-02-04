@@ -1,0 +1,16 @@
+PACKAGES aptitude
+
+build-essential
+genisoimage
+
+openvpn
+openvpn-blacklist
+
+isc-dhcp-server
+isc-dhcp-relay
+radvd
+
+bird
+bird6
+quagga
+#xorp

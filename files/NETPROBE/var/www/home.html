@@ -1,0 +1,1253 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01//EN" "http://www.w3.org/TR/html4/strict.dtd">
+<html>
+
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<meta name="robots" content="none" />
+<meta name="author" content="Oleg Klyudt, Technical University of Munich, Chair of Network Architectures and Services. August 2012" />
+<title>Monitoring graphs</title>
+<link rel="stylesheet" href="amcharts_2.7.6/samples/style.css" type="text/css">
+<script src="amcharts_2.7.6/amcharts/amcharts.js" type="text/javascript"></script>
+<script src="rrd_lib.js" type="text/javascript"></script>
+<script type="text/javascript">
+
+var amReady = false;
+var queueOnAmReady = [];
+
+AmCharts.ready(function() {
+    "use strict";
+    var ar = queueOnAmReady, i = 0, item = null;
+    amReady = true;
+    if (! ar instanceof Array) throw new Error("queueOnAmReady was damaged, initialisation of AmCharts is not possible");
+    for (var l = ar.length; i < l; ++i) {
+        item = ar.shift();
+        if (typeof item === "object") {
+            item.func.apply(item.that);
+        }
+    }
+});
+
+function GraphBundle(name, //name of instance, for debugging purposes
+                     boundId, //div's id attribute value, where the chart should be written into
+                     titleFunc) { // function to customize chart title
+    "use strict";
+    if (name !== undefined && name instanceof String) this.name = name;
+    else this.name = "undefined";
+    this.chart = null;
+    this.chartDataArray = [];
+    this.tailTracking = false;
+    this.ignoreZooming = false; //Whether to send DB query on every zoom event or not
+    this.wholeRange = 0;
+    var _live = false; //indication for both DataPlane and UI, they should adjust their behaviour correspondingly, but a way not affecting each other
+    Object.defineProperty(this,'live',{
+        set: function(val) {
+            _live = !!val;
+            for (var i = 0, l = _graphs.length; i < l; ++i) {
+                _graphs[i].source.live = _live;
+            }
+        },
+        get: function() {
+            return _live;
+        }
+    });
+    var _threshold = 0.5; // 0 : redraw chart on every dataupdat; 1 : wait until all datasources for graphs get updated
+    Object.defineProperty(this,'threshold',{
+        set: function(val) {
+            if (val instanceof Number && val >= 0 && val <= 1.0) {
+                _threshold = val;
+            }
+            else {
+                throw new Error("this.threshold: assigned value must be number in range (0:1.0)");
+            }
+        },
+        get: function() {
+            return _threshold;
+        }
+    });
+    var _callCounter = 0;
+    var _graphs = []; //array of {graph: new AmCharts.AmGraph(), source: new CdpContainer()} objects
+    var _lastValAxis = null; // last used value Axis is stored here
+    var tracker = {
+        timeSpan: 7200000 //last 2 hours in ms by default
+
+    };
+    this.pollSources = function(st,et) { //times in ms
+        "use strict";
+        if ((typeof st === 'number' || st === 'tracking' || st === undefined) && (typeof et === 'number' || et === undefined)) {
+            if (_graphs.length > 0) {
+                for (var i=0; i < _graphs.length; ++i) {
+                    if (st === undefined && et === undefined) { _graphs[i].source.getData();} // without arguments - to invoke the method with earlier set sTime and eTime values
+                    else if (st === 'tracking') {_graphs[i].source.getData(this.chart.chartData[this.chart.chartData.length - 1].time - tracker.timeSpan,0);}
+                    else { _graphs[i].source.getData(st,et);}
+                }
+            }
+            else {
+                log("pollSources: Error: no sources to poll"); //keep working, just notification
+            }
+        }
+        else {
+            throw new Error("this.pollSources: wrong type of arguments");
+        }
+
+    };
+    this.chartUpdate = function(s, e) {
+        "use strict";
+        if (this.chart === null) throw new Error("chartUpdate(): chart is not initialised");
+        ++_callCounter;
+        if (_callCounter > Math.floor(_graphs.length * _threshold)) {
+            _callCounter = 0;
+            this.ignoreZooming = true;
+            this.chart.validateData(); // for a case of SerialChart, otherwise distinction must be made
+            if (s !== undefined && e !== undefined) {
+                this.chart.zoomToDates(s, e);
+            }
+            else {
+                // this part is used, when a whole chart timescale is received
+                var stEtArr = (function findFirstNonEmptyElement(arr) {
+                    var pName = '', found = false;
+                    for (var i = 0, l = arr.length; i < l; ++i) {
+                        for (pName in arr[i]) {
+                            if (arr[i].hasOwnProperty(pName) && pName !== 'date') {
+                                if (!isNaN(arr[i][pName])) {found = true; break;}
+                            }
+                        }
+                        if (found) break;
+                    }
+                    var res = new Array();
+                    if (i === l) { // all elements are empty
+                        res.push(arr[0].date);
+                        res.push(arr[l-1].date);
+                    }
+                    else if (l - i - 1 === 0 && l > 3) {
+                        // if only one non empty point is present in the series
+                        // let's leave some earlier point to give a room for manual zooming control
+                        res.push(arr[i-3].date);
+                        res.push(arr[l-1].date);
+                    }
+                    else {
+                        if (i > 0) {
+                            res.push(arr[i-1].date);
+                        }
+                        else if (i === 0) {
+                            res.push(arr[i].date);
+                        }
+                        res.push(arr[l-1].date);
+                    }
+                    return res;
+
+                }(this.chartDataArray));
+
+                this.chart.zoomToDates(stEtArr[0], stEtArr[1]); // zoom to first non-empty data sample and last one
+                //this.chart.zoomOut();
+            }
+            this.ignoreZooming = false;
+        }
+    };
+    this.chartRedraw = function() {
+        "use strict";
+        this.ignoreZooming = true;
+        this.chart.validateNow();
+        this.ignoreZooming = false;
+    };
+
+    this.addSource = function (fileName, //name of RRD file on server to query
+                               customObj, //object for chart anc components customization: {categoryAxis: function, valueAxis: function, graph: function, cursor:function, scrollBar:function, legend:function}
+                               cbFunc, // it should remap datavalues to an object with appropriate property name as set up by customObj for the current graph, after that it should merge received result with chartDataArray
+                               consolidationFunction,
+                               pointsNum) {
+        "use strict";
+        var that = this;
+        var valueName = ''; //it's set up in graph.valueField in order to know which field to look for in chartDaraArray
+        /***Define CF***/
+        var cf = "average";
+        if (fileName instanceof String && fileName.length > 0) throw new Error("addSource(): fileName must be non empty String");
+        if (! (consolidationFunction === undefined) && typeof consolidationFunction === 'string') cf = consolidationFunction;
+        /*##Define CF##*/
+
+        //Remote DB part
+        /***Instantiate CdpContainer object and set properties***/
+        var dataFeed = new CdpContainer(fileName,cf);
+        dataFeed.dataType = ["time","value"];
+        if (typeof pointsNum === 'number' && pointsNum > 0) {
+            dataFeed.cdpToShow = pointsNum; //how many dataPoints to query
+        }
+        else {
+            throw new Error("addSource(): pointsNum must be positive Number");
+        }
+        dataFeed.verbose && log("addSource(): CdpContainer object was created");
+        /*##Instantiate CdpContainer object and set properties##*/
+
+        /***Assign callBack to instance***/
+        if (cbFunc !== undefined && cbFunc !== null && typeof cbFunc === "function") {
+            // one can override default callback function, for example, to change
+            // logic of data processing
+            // access to a dataFeed instance through use of 'this'
+            // access to a chartBundle instance through use of 'this.chartRef'
+            dataFeed.chartRef = this;
+            dataFeed.callBack = cbFunc;
+        }
+        else {
+            dataFeed.callBack = function(arr) {
+                "use strict";
+                //first call is always result of getData(0,0) query
+                var dC = that.chartDataArray;
+                var dG = [], res = [];
+                if (dC.length !== 0) {var lDate = dC[dC.length-1].date;} //last received date
+
+                for (var l = arr[0].length, i = 0; i < l; ++i) {
+                    dG.push({date: new Date(arr[0][i]),
+                        value: parseInt(arr[1][i].toFixed(2))
+                    });
+                }
+                dataFeed.verbose && log("Received time values: first:"+dG[0].date+" last:"+dG[dG.length - 1].date);
+
+                if (dC.length === 0) {that.chart.dataProvider = that._replaceSeries(dC, dG, valueName, this.cdpToShow);}
+
+                if (dataFeed.compareTimes('x',0)) {
+                    if (that.tailTracking && lDate < dG[dG.length-1].date) { // if tracking is on and a shift of time window is required
+                        var startInterval = lDate.getTime() - tracker.timeSpan;
+                        dataFeed.setTimes(startInterval, 0);
+                        dataFeed.verbose && log("Track_Debug: set DB object times to request: sTime: "+startInterval+ " \neTime: 0");
+                    }
+
+                    if (dataFeed.compareTimes(0,0) && arr[0].length !== 0 && arr.length !== 0) {
+                        res = that._replaceSeries(dC, dG, valueName, this.cdpToShow);
+                        dC.splice(0, dC.length);
+                        for (var i=0; i < res.length; ++i) dC[i] = res[i]; // in-place assignment to preserve 'chartDataArray' memory position
+                    }
+                    else {
+                        res = that._mergeSeries(dC, dG, valueName, this.cdpToShow);
+                        //if (res.length > dataFeed.cdpToShow) res.splice(0, res.length - dataFeed.cdpToShow);
+                        dC.splice(0, dC.length);
+                        for (var i=0; i < res.length; ++i) dC[i] = res[i];
+                    }
+                }
+                else {
+                    res = that._mergeSeries(dC, dG, valueName, this.cdpToShow);
+                    //if (res.length > dataFeed.cdpToShow) res.splice(0, res.length - dataFeed.cdpToShow);
+                    dC.splice(0, dC.length);
+                    for (var i=0; i < res.length; ++i) dC[i] = res[i];
+                }
+
+                dataFeed.verbose && log("Data ready for plotting");
+
+                if (dataFeed.compareTimes(0,0)) {
+                    that.chartUpdate();
+                }
+                else {
+                    that.chartUpdate(dG[0].date, dG[dG.length-1].date);
+                }
+            };
+        }
+        /*##Assign callBack to instance##*/
+
+        //Draw UI part
+        /***Main drawing function definition. It performs chart and its components initialisation and customization***/
+        var drawingFunc = function() {
+            "use strict";
+            // function is used to initialize chart, if not yet, but primarily to add a graph to the chart
+            var that = this; //this chartBundle object when called with 'apply' to such a object
+            var ch = null;
+            if (this.chart === null) {
+                // Here we'll create chart
+                // SERIAL CHART
+                this.chart = new AmCharts.AmSerialChart();
+                ch = this.chart;
+
+                ch.clickZB = function() {
+                    //overriding (shadowing) function
+                    that.ignoreZooming = true;
+                    this.zoomOut();
+                    that.ignoreZooming = false;
+                    that.pollSources(0,0);
+                };
+                ch.pathToImages = "amcharts_2.7.6/amcharts/images/";
+                ch.zoomOutButton = {
+                    backgroundColor: '#000000',
+                    backgroundAlpha: 0.15
+                };
+                ch.dataProvider = this.chartDataArray;
+                ch.categoryField = "date";
+
+                if (titleFunc !== undefined && typeof titleFunc === 'function') {
+                    var _obj = {};
+                    titleFunc.apply(_obj);
+                    if (_obj.title !== undefined) {
+                        if (_obj.size === undefined) _obj.size = 24;
+                        if (_obj.color === undefined) _obj.color = "#000000";
+                        if (_obj.opacity === undefined) _obj.opacity = 0;
+                        if (_obj.bold === undefined) _obj.bold = true;
+                        ch.addTitle(_obj.title, _obj.size, _obj.color, _obj.opacity, _obj.bold);
+                    }
+                    else {
+                        commonPrototype.verbose && log("drawingFunc(): received title function didn't setup 'title' field on an object. Title won't be drawn.");
+                    }
+                }
+
+                ch.addListener("zoomed",(function(){
+                    //this function must work for all graphs at once
+                    return function(obj) {
+                        if (that.chart.chartCursor.zooming) {
+                            console.warn("Zooming on");}
+                        else {console.warn("Zooming off");}
+                        if (!that.ignoreZooming && that.chart.chartCursor.zoomable) {
+                            var lastEl = ch.chartData[ch.chartData.length - 1];
+                            if (that.tailTracking) {
+                                tracker.timeSpan = lastEl.time - obj.startDate.getTime(); //in ms
+                                dataFeed.verbose && (log("Track_Debug: Zooming fired, timeSpan: "+tracker.timeSpan/1000),
+                                        log("Track_Debug: New time window will be requested, shifted by timeSpan from right border away"));
+
+                                that.pollSources(lastEl.time - tracker.timeSpan,0);
+                            }
+                            // The following case allows to get all data within requested zooming interval till end,
+                            // when right zoom dragger was brought to an edge of a chart
+                            else if (obj.endDate.getTime() >= lastEl.time) {
+                                that.pollSources(obj.startDate.getTime(), 0);
+                            }
+                            else {
+                                that.pollSources(obj.startDate.getTime(), obj.endDate.getTime());
+                            }
+
+                            dataFeed.verbose && log("Request sent");
+                            dataFeed.verbose && log("Zoomed boundaries: Start: "+obj.startDate+"; "+"End: "+obj.endDate);
+                        }
+                        else {
+                            dataFeed.verbose && log("Zoom event ignored");
+                            //data1.forcedZoom = false;
+                        }
+                    }
+                }()));
+
+                ch.addListener("changed",(function(){
+                    return function(obj) {
+                        if (obj.zooming) that.ignoreZooming = false;
+                    }
+                }()));
+
+                // AXIS category. There can be only one category axis.
+                var categoryAxis = ch.categoryAxis;
+                categoryAxis.parseDates = true; // as our data is date-based, we set parseDates to true
+                categoryAxis.minPeriod = "ss"; // our data goes with half a minute intervals,therefore minPeriod is set to ss
+                categoryAxis.dashLength = 1;
+                categoryAxis.gridAlpha = 0.15;
+                categoryAxis.axisColor = "#DADADA";
+                if (customObj.categoryAxis !== undefined && typeof customObj.categoryAxis === "function") {
+                    customObj.categoryAxis.apply(categoryAxis);
+                }
+
+                var legend = new AmCharts.AmLegend();
+                legend.spacing = 10;
+                if (customObj.legend !== undefined && typeof customObj.legend === "function") {
+                    customObj.legend.apply(legend);
+                }
+                ch.addLegend(legend);
+
+
+                // WRITE. Even without graphs yet.
+                ch.write(boundId);
+
+                commonPrototype.verbose && log("Chart container was created and initialised");
+            }
+            else {ch = this.chart;}
+
+            // GRAPH
+            if (customObj.graph !== undefined && typeof customObj.graph === "function") {
+
+                var graph = new AmCharts.AmGraph();
+
+                // AXIS value. There can be several value axes.
+                if (customObj.valueAxis !== undefined && typeof customObj.valueAxis === "function") {
+
+                    var valueAxis = new AmCharts.ValueAxis();
+                    valueAxis.axisAlpha = 0.2;
+                    valueAxis.dashLength = 1;
+                    //valueAxis.reversed = true; //to reverse it
+                    customObj.valueAxis.apply(valueAxis);
+                    ch.addValueAxis(valueAxis);
+                    _lastValAxis = valueAxis;
+                }
+
+                if (_lastValAxis !== null || _lastValAxis !== undefined ) {graph.valueAxis = _lastValAxis;}
+                graph.title = fileName;
+                graph.connect = false; //data intervals of NaN will not be drawn
+                graph.valueField = "value"; //MUST be modified with customObj.graph method for every graph
+                //graph2.valueAxis = valueAxisName; //in case of several value Axes being used - name of it must be indicated clearly
+                graph.bullet = "round";
+                graph.bulletBorderColor = "#FFFFFF";
+                graph.bulletBorderThickness = 2;
+                graph.lineThickness = 2;
+                graph.lineColor = "#b5030d";
+                graph.negativeLineColor = "#0352b5";
+                graph.fillAlphas = 0.3; // non zero values give color to graph background, effectively making it an area one, not simply a line
+                graph.hideBulletsCount = 50; // this makes the chart to hide bullets when there are more than 50 series in selection
+                customObj.graph.apply(graph);
+                valueName = graph.valueField;
+                ch.addGraph(graph);
+
+            }
+            else throw new Error("addSource(): customObj: graph customization function must be present");
+
+            _graphs.push({graph: graph, source: dataFeed});
+
+
+
+            if (_graphs.length === 1 ) {
+                commonPrototype.verbose && log("No graphs were added yet. Initialising cursor and scrollbar for a graph.");
+
+                if (typeof customObj.valueAxis !== 'function') {
+                    commonPrototype.verbose && log("No valueAxis was detected - adding one automatically");
+                    var valAxisAutom = new AmCharts.ValueAxis();
+                    valAxisAutom.axisAlpha = 0.2;
+                    valAxisAutom.dashLength = 1;
+                    ch.addValueAxis(valAxisAutom);
+                    _lastValAxis = valAxisAutom;
+                }
+
+                // Both cursor and scrollbar objects can be safely added to chart many times, as they get destroyed before addition automaticaly (sort of Singletone pattern, without persistency though)
+                // CURSOR
+                var chartCursor = new AmCharts.ChartCursor();
+                chartCursor.cursorPosition = "mouse";
+                chartCursor.categoryBalloonDateFormat = "JJ:NN:SS MMM DD YYYY";
+                if (customObj.cursor !== undefined && typeof customObj.cursor === "function") {
+                    customObj.cursor.apply(chartCursor);
+                }
+                ch.addChartCursor(chartCursor);
+
+                // SCROLLBAR
+                var chartScrollbar = new AmCharts.ChartScrollbar();
+                chartScrollbar.graph = _graphs[0].graph; //here should be one stacked graph, hidden from main chart area, still unclear how to do it (graph.hide doesn't work)
+                chartScrollbar.scrollbarHeight = 40;
+                chartScrollbar.color = "#FFFFFF";
+                chartScrollbar.autoGridCount = true;
+                chartScrollbar.updateOnReleaseOnly = true;
+                if (customObj.scrollBar !== undefined && typeof customObj.scrollBar === "function") {
+                    customObj.scrollBar.apply(chartScrollbar);
+                }
+                ch.addChartScrollbar(chartScrollbar);
+            }
+
+            // if there are still no data; then:
+            if (this.chartDataArray.length === 0) (this.generateChartData(graph.valueField), this.chart.validateData());
+
+            // think over: if there are still no datavalues for this graph to draw (e.g. high network latency), what should happen?
+            this.chartRedraw();
+
+            /***Start quiet asynchronous DB querying in background***/
+            try {
+                dataFeed.getData(0,0); //start and end Time, start=0 - since very beginning, end=0 - till currently available last data.
+            }
+            catch (er) {
+                dataFeed.verbose && log(er.name + ': ' + er.message);
+            }
+            /*##Start quiet asynchronous DB querying in background##*/
+
+        };
+        /*##Main drawing function definition##*/
+
+        /***Drawing function call (can be deferred with later FIFO-like array "queueOnAmReady" offloading)***/
+        if (!amReady) {
+            queueOnAmReady.push({
+                that: that,
+                // this func cannot be brought in prototype because it makes extensive use of local executiion context arguments and objects.
+                // exporting it like this, the func will preserve its exec. context as being a closure
+                func: drawingFunc
+            });
+        }
+        else { //on amReady call right here!
+            drawingFunc.apply(this);
+        }
+
+    };
+}
+
+GraphBundle.prototype.trackerBtnHandler = function(id) {
+    "use strict";
+    if (!(typeof id === 'string') || id.length === 0) throw new Error("trackerBtnHandler(): argument must be non empty String");
+    if (!this.tailTracking) {
+        document.getElementById(id).setAttribute("value","Disable tracking");
+        this.tailTracking = true;
+        this.pollSources("tracking");
+    }
+    else {
+        this.tailTracking = false;
+        document.getElementById(id).setAttribute("value","Enable tracking");
+    }
+};
+
+GraphBundle.prototype.liveBtnHandler = function(id) {
+    "use strict";
+    if (!(typeof id === 'string') || id.length === 0) throw new Error("liveBtnHandler(): argument must be non empty String");
+    if (this.live) {
+        this.live = false;
+        document.getElementById(id).setAttribute("value","Enable real-time update");
+
+    }
+    else {
+        this.live = true;
+        document.getElementById(id).setAttribute("value","Disable real-time update");
+        this.pollSources();
+    }
+};
+
+GraphBundle.prototype.comp_vals = function(val1, val2) {
+    "use strict";
+    if (!val1.hasOwnProperty("date") || !val2.hasOwnProperty("date")) {
+        throw new Error("comp_vals(): arguments don't have 'date' property");
+    }
+    if (!(val1.date instanceof Date && val2.date instanceof Date))  {
+        throw new Error("comp_vals(): arguments' 'date' properties reference to not a Date() instance object");
+    }
+    if (val1.date.getTime() < val2.date.getTime()) {
+        return -1;
+    } else if (val1.date.getTime() > val2.date.getTime()) {
+        return +1;
+    }
+    else return 0;
+};
+
+GraphBundle.prototype.generateChartData = function(fieldName) {
+    "use strict";
+    var firstDate = new Date();
+    firstDate.setDate(firstDate.getDate() - 20);
+
+    for (var i = 0; i < 20; i++) {
+        var newDate = new Date(firstDate);
+        newDate.setDate(newDate.getDate() + i);
+        var obj = {date: newDate};
+        Object.defineProperty(obj,fieldName,{value: 5, configurable: true,
+            writable : true, enumerable: true});
+        this.chartDataArray.push(obj);
+    }
+    this.ignoreZooming = true;
+    commonPrototype.verbose && log("No data was found in this.chart.chartData, generating dummy data - it will be overwritten with first update");
+};
+
+GraphBundle.prototype._replaceSeries =  function(ser, slice, vN, maxLen) {
+    "use strict";
+    // ser (Series) is an array of objects wich is processed by AmChart for drawing
+    // slice is an array of objects {"date": val1, "value": val2}, which should be inserted into "ser" with "value" property renaming to "vN"
+
+    var pName = '', moreThanTwoProps = false;
+
+    if (vN === undefined || vN === null || typeof vN !== 'string') {
+        throw new Error("_replaceSeries: valueName must be of String type");
+    }
+    else {
+        var valueName = vN;
+    }
+
+    if (valueName === '' || slice.length === 0) return ser; // in case valueName wasn't set yet
+
+    var range = slice[slice.length - 1].date.getTime() - slice[0].date.getTime();
+    if (range > this.wholeRange) {
+        this.wholeRange = range; // in ms
+    }
+
+    if (ser.length !== 0) { //check, whether ser consists of objects for only one graph, then all objects can be deleted and allocated anew with new values.
+        for (pName in ser[0]) {
+            if (ser[0].hasOwnProperty(pName) && (pName === 'date' || pName === valueName)) {}
+            else {moreThanTwoProps = true;}
+        }
+    }
+    if (ser.length === 0 || !moreThanTwoProps) { // in case chart.dataProvider is empty yet
+        var arr = [];
+        for (var i=0; i < slice.length; ++i) {
+            var obj = {date: slice[i].date};
+            Object.defineProperty(obj, valueName, {value: slice[i].value,
+            configurable: true,
+            writable : true,
+            enumerable: true});
+            arr.push(obj);
+        }
+        return arr;
+    }
+    else {
+        // clear off valueName property of every object in array 'ser'
+        var idx = 0;
+        for (;idx < ser.length; ++idx) {
+            delete (ser[idx])[valueName];
+        }
+
+        // constructing new floating template object
+        // Assumption in use: all objects in array 'ser' have the same set of properties
+        var propName = '';
+        var fObj = {};
+        fObj[valueName] = NaN;
+        for (propName in ser[0]) {
+            if (ser[0].hasOwnProperty(propName)) { // considering only own properties, not inherited
+                fObj[propName] = NaN; // assigning properties to the fObj with initial value of NaN (which won't be drawn on chart)
+            }
+        }
+
+        // add "slice" to the end of "ser" and sort elements in resulted array based on "date" property
+        var sRawArr = ser.concat(slice); //sorted raw (unprocessed) array
+        sRawArr.sort(this.comp_vals);
+
+        // filtering sorted array with floating Object fObj and pushing modified objects in resulted array sProcArr
+        var sProcArr = []; //sorted processed array, which will be returned as a result of the function
+        var delPrev = false;
+        for (idx = 0; idx < sRawArr.length; ++idx) {
+            // every "obj" is compared with "T" obj on properties, lacking properties get added to "obj", others get updated by value in "T"
+            // also the IIFE takes care of duplicate objects based on "date" property by indicating its deletion with delPrev flag
+            delPrev = (function (T, obj) {
+                var deletionFlag = false; //indicating penultimate element deletion
+                var propName = '';
+                if (obj.hasOwnProperty('value')) {
+                    T[valueName] = obj.value;
+                    delete obj.value;
+                }
+                for (propName in T) {
+                    if (T.hasOwnProperty(propName)) {
+                        if (obj.hasOwnProperty(propName)) {
+                            if (propName === 'date' && T[propName] instanceof Date) {
+                                // it's a check for objects with duplicate time, they must be removed
+                                if ( T[propName].getTime() === obj[propName].getTime() ) deletionFlag = true;
+                            }
+
+                            T[propName] = obj[propName];
+                        }
+                        else {
+                            Object.defineProperty(obj,propName, {value: T[propName],
+                                configurable: true,
+                                writable : true,
+                                enumerable: true});
+                        }
+                    }
+                }
+                sProcArr.push(obj);
+                return deletionFlag;
+            }(fObj, sRawArr[idx])); //IIFE - immediately-invoked function expression
+            if (delPrev) {
+                sProcArr.splice(sProcArr.length-2, 1); //delete a penultimate element
+            }
+        }
+
+        if (sProcArr.length > maxLen && this.wholeRange < ( sProcArr[sProcArr.length-1].date.getTime() - sProcArr[0].date.getTime() ) ) {
+            var _limit = maxLen;
+            (function cleanUpStaleOrphanedDataStamps() {
+                // Deleting the longest series of array elements in the beginning, which
+                // contains objects with all properties equal to 'NaN'.'date' property is ignored
+                var pName = '', found = false;
+                for (var i = 0, l = sProcArr.length; i < l; ++i) {
+                    for (pName in sProcArr[i]) {
+                        if (sProcArr[i].hasOwnProperty(pName) && pName !== 'date') {
+                            if (!isNaN(sProcArr[i][pName])) {found = true; break;}
+                        }
+                    }
+                    if (found) break;
+                }
+                if (i < l) {
+                    if (sProcArr.length - i > _limit ) {sProcArr.splice(0,i);}
+                    else {sProcArr.splice(0,sProcArr.length - _limit);}
+                    commonPrototype.verbose && log("_replaceSeries() -> cleanUpStaleOrphanedDataStamps(): "+ i + " elements were cleaned up");
+                }
+            } ()); //IIFE
+        }
+
+        return sProcArr;
+    }
+
+};
+
+GraphBundle.prototype._mergeSeries = function(ser, slice, vN, maxLen) {
+    "use strict";
+    // ser (Series) is an array of objects wich is processed by AmChart for drawing
+    // slice is an array of objects {"date": val1, "value": val2}, which should be inserted into "ser" with "value" property renaming to "vN"
+
+    if (vN === undefined || vN === null || typeof vN !== 'string') {
+        throw new Error("_MergeSeries: valueName must be of String type");
+    }
+    else {
+        var valueName = vN;
+    }
+
+    if (valueName === '' || slice.length === 0) return ser; // in case valueName wasn't set yet
+    if (ser.length === 0) { // in case chart.dataProvider is empty yet
+        var arr = [];
+        for (var i=0; i < slice.length; ++i) {
+            var obj = {date: slice[i].date};
+            Object.defineProperty(obj, valueName, {value: slice[i].value,
+                configurable: true,
+                writable : true,
+                enumerable: true});
+            arr.push(obj);
+        }
+        return arr;
+    }
+    else {
+        // clear off valueName property of every object in an interval affected by "slice" of the array 'ser'
+        var idx = 0;
+        for (;idx < ser.length; ++idx) {
+            if (ser[idx].date >= slice[0].date && ser[idx].date <= slice[slice.length - 1].date) {
+                delete (ser[idx])[valueName];
+            }
+        }
+
+        // constructing new floating template object
+        // Assumption in use: all objects in array 'ser' have the same set of properties
+        var propName = '';
+        var fObj = {};
+        fObj[valueName] = NaN;
+        for (propName in ser[0]) {
+            if (ser[0].hasOwnProperty(propName)) { // considering only own properties, not inherited
+                fObj[propName] = NaN; // assigning properties to the fObj with initial value of NaN (which won't be drawn on chart)
+            }
+        }
+
+        // add "slice" to the end of "ser" and sort elements in resulted array based on "date" property
+        var sRawArr = ser.concat(slice); //sorted raw (unprocessed) array
+        sRawArr.sort(this.comp_vals);
+
+        // filtering sorted array with floating Object fObj and pushing modified objects in resulted array sProcArr
+        var sProcArr = []; //sorted processed array, which will be returned as a result of the function
+        var delPrev = false;
+        var sIdx = this.bsearchFirst(sRawArr, slice[0].date);
+        var eIdx = this.bsearchLast(sRawArr, slice[slice.length-1].date);
+        if (sIdx > eIdx) throw new Error("_mergeSeries: indexOf() returned indexes are incorrect, start is bigger than end");
+        if (sIdx !== 0) sIdx -= 1; // to include an element before actual one
+        sProcArr = sRawArr.slice(0,sIdx); // copy slice of sRawArr array from start up to (excluding) element sRawArr[sIdx]
+
+        for (idx = sIdx; idx <= eIdx; ++idx) {
+            // every "obj" is compared with "T" obj on properties, lacking properties get added to "obj", others get updated by value in "T"
+            // also the IIFE takes care of duplicate objects based on "date" property by indicating its deletion with delPrev flag
+            delPrev = (function (T, obj) {
+                var deletionFlag = false; //indicating penultimate element deletion
+                var propName = '';
+                if (obj.hasOwnProperty('value')) {
+                    T[valueName] = obj.value;
+                    delete obj.value;
+                }
+                for (propName in T) {
+                    if (T.hasOwnProperty(propName)) {
+                        if (obj.hasOwnProperty(propName)) {
+                            if (propName === 'date' && T[propName] instanceof Date) {
+                                // it's a check for objects with duplicate time, they must be removed
+                                if ( T[propName].getTime() === obj[propName].getTime() ) deletionFlag = true;
+                            }
+                            T[propName] = obj[propName];
+                        }
+                        else {
+                            Object.defineProperty(obj,propName, {value: T[propName],
+                                configurable: true,
+                                writable : true,
+                                enumerable: true});
+                        }
+                    }
+                }
+                sProcArr.push(obj);
+                return deletionFlag;
+            }(fObj, sRawArr[idx])); //IIFE - immediately-invoked function expression
+
+            if (delPrev) {
+                sProcArr.splice(sProcArr.length-2, 1); //delete a penultimate element
+            }
+        }
+        var result = sProcArr.concat(sRawArr.slice(eIdx+1));
+
+        // Cleaning up follows here
+        // very first and last elements of a array are preserved no to harm scaling and keep up connectivity of lines going outwards the visible part of a plot
+
+        var sIdx = this.bsearchFirst(result, slice[0].date);
+        var eIdx = this.bsearchLast(result, slice[slice.length-1].date);
+        if (result.length > maxLen) {
+            var diff = result.length - maxLen;
+            if (diff < sIdx) {
+                result.splice(1,diff);
+                return result;
+            }
+            else if (diff >= sIdx && diff < sIdx + result.length - eIdx - 3) {
+                diff= diff - sIdx + 1; // left to delete from the right
+                result.splice(eIdx+1,diff); //cleaning tail first
+                result.splice(1,sIdx-1); // cleaning front part
+                return result;
+            }
+            else {
+                result.splice(eIdx + 1, result.length - eIdx - 2);
+                result.splice(1, sIdx - 1);
+                return result;
+            }
+        }
+        else {
+            return result;
+        }
+
+    }
+};
+
+GraphBundle.prototype.bsearchFirst = function(arr, val) {
+    "use strict";
+    var first = 0;
+    var last = arr.length;
+    var mid;
+    if (last === 0) {return 0;}
+    else if (arr[0].date > val) { return 0;}
+    else if (arr[last-1].date < val) { return last-1;}
+    while (first < last) {
+        mid = Math.floor(first + (last - first) / 2);
+
+        if (val <= arr[mid].date) {last = mid;}
+        else {first = mid + 1;}
+    }
+    if (arr[last].date.getTime() === val.getTime()) {return last;}
+    else {return last;}
+};
+
+GraphBundle.prototype.bsearchLast = function(arr, val) {
+    "use strict";
+    var first = 0;
+    var last = arr.length - 1;
+    var mid;
+    if (last === 0) {return 0;}
+    else if (arr[0].date > val) { return 0;}
+    else if (arr[last].date < val) { return last;}
+    while (first <= last) {
+        mid = Math.floor(first + (last - first) / 2);
+
+        if (val < arr[mid].date) {last = mid - 1;}
+        else {first = mid + 1;}
+    }
+    if (arr[last].date.getTime() === val.getTime()) {return last;}
+    else {throw new Error("bsearchLast(): Incorrect index was found");}
+};
+
+// changes cursor mode from pan to select
+GraphBundle.prototype.setPanSelect = function(id) {
+    if (document.getElementById(id).checked) {
+        this.chart.chartCursor.pan = false;
+        this.chart.chartCursor.zoomable = true;
+
+    } else {
+        this.chart.chartCursor.pan = true;
+    }
+    this.chartRedraw();
+};
+
+
+commonPrototype.live = false; //this default value is inherited by all sources upon instantiation automatically
+commonPrototype.verbose = true; //display log messages using log facilities
+commonPrototype.servUrl = "http://10.0.3.3/cgi-bin/getData";
+
+//commonPrototype.servUrl = "http://www.lambda.org/cgi-bin/do_it.php"; -example remote/local server URI setting
+//data1.con_func = "max"; -example on how to change consolidation function
+//data1.set_id = "other_file.rrd"; -example on how to change name of rrd database file
+
+//NOTICE: filename of RRDB cannot contain symbols: /, \, .., $, and others. Allowed symbols: alphanumerical, dot (.), and underscore (_).
+//Otherwise server will report error. It's of sanity check sake.
+//
+//Remark on cdpToShow number of points with example:
+//numPointsInDB = 100;
+//-----------------------
+//cdpToShow = 20;
+//returnedPointsNum = 20; <-- Consolidation function of a given type was used to provide coarse data
+//-----------------------
+//cdpToShow = 1500;
+//returnedPointsNum = 100; <--  maximum returned number of cdp is 1000, higher numbers are reseted to this value.
+//                              In this case, the number of points returned is that of available in DB
+//-----------------------
+//todo: make a setup for tstat graphs and try it live
+
+var chartTCPAnomOut = new GraphBundle(
+        "TCPanomOut", //tstat - just name for this instance
+        "chartdiv", // chartdiv - id of document node "div", where chart will be drawn into
+        function() {
+            this.title = 'TCP Anomalies. Outgoing';
+            this.size = 24;             // can be omitted
+            this.color = '#000000';     // can be omitted
+            this.opacity = 0;           // can be omitted
+            this.bold = true;           // can be omitted
+        }
+);
+chartTCPAnomOut.addSource("tcp_anomalies_out.idx0.rrd", //name of rrd file on a server (it will be sanitized and looked for only in preconfigured directories)
+        {   categoryAxis: null,
+            valueAxis: function() {
+                this.offset = 0; // this line makes the axis to appear detached from plot area
+                this.gridAlpha = 0;
+                this.axisColor = "#000000";
+                this.axisThickness = 2;
+            }, //can be declared, null or omitted
+            graph: function() {
+                this.valueField = "AnomOutIdx0"; //must present with at least this.valueField = "name". Can be any name, but different within one GraphBundle instance.
+                this.title = "Out-Anom-IN-SEQ"; // can be omitted, by default name of a DB file is used
+                this.lineColor = "#ff6600";
+            },
+            cursor: null, //can be declared, null or omitted
+            scrollBar: null, //can be declared, null or omitted
+            legend: null //can be declared, null or omitted
+        },
+        null, //callBack function, here default is used
+        "average", //name of consolidation function for server
+        100); //number of points to request
+
+chartTCPAnomOut.addSource("tcp_anomalies_out.idx1.rrd", //name of rrd file on a server (it will be sanitized and looked for only in preconfigured directories)
+        {   categoryAxis: null, //can be declared, null or omitted
+            valueAxis: null, //can be declared, null or omitted
+            graph: function() {
+                this.valueField = "AnomOutIdx1";  //must present with at least this.valueField = "name". Can be any name, but different within one GraphBundle instance.
+                this.title = "Out-Anom-RTX_RTO"; // can be omitted, by default name of a DB file is used
+                this.lineColor = "#0000FF";
+            },
+            cursor: null, //can be declared, null or omitted
+            scrollBar: null, //can be declared, null or omitted
+            legend: null //can be declared, null or omitted
+        },
+        null, //callBack function, here default is used
+        "average", //name of consolidation function for server
+        100); //number of points to request
+
+chartTCPAnomOut.addSource("tcp_anomalies_out.idx2.rrd", //name of rrd file on a server (it will be sanitized and looked for only in preconfigured directories)
+        {   categoryAxis: null, //can be declared, null or omitted
+            valueAxis: null, //can be declared, null or omitted
+            graph: function() {
+                this.valueField = "AnomOutIdx2";  //must present with at least this.valueField = "name". Can be any name, but different within one GraphBundle instance.
+                this.title = "Out-Anom-RTX_FR"; // can be omitted, by default name of a DB file is used
+                this.lineColor = "#99FF66";
+            },
+            cursor: null, //can be declared, null or omitted
+            scrollBar: null, //can be declared, null or omitted
+            legend: null //can be declared, null or omitted
+        },
+        null, //callBack function, here default is used
+        "average", //name of consolidation function for server
+        100); //number of points to request
+
+chartTCPAnomOut.addSource("tcp_anomalies_out.idx3.rrd", //name of rrd file on a server (it will be sanitized and looked for only in preconfigured directories)
+        {   categoryAxis: null, //can be declared, null or omitted
+            valueAxis: null, //can be declared, null or omitted
+            graph: function() {
+                this.valueField = "AnomOutIdx3";  //must present with at least this.valueField = "name". Can be any name, but different within one GraphBundle instance.
+                this.title = "Out-Anom-REORD"; // can be omitted, by default name of a DB file is used
+                this.lineColor = "#996600";
+            },
+            cursor: null, //can be declared, null or omitted
+            scrollBar: null, //can be declared, null or omitted
+            legend: null //can be declared, null or omitted
+        },
+        null, //callBack function, here default is used
+        "average", //name of consolidation function for server
+        100); //number of points to request
+
+chartTCPAnomOut.addSource("tcp_anomalies_out.idx4.rrd", //name of rrd file on a server (it will be sanitized and looked for only in preconfigured directories)
+        {   categoryAxis: null, //can be declared, null or omitted
+            valueAxis: null, //can be declared, null or omitted
+            graph: function() {
+                this.valueField = "AnomOutIdx4";  //must present with at least this.valueField = "name". Can be any name, but different within one GraphBundle instance.
+                this.title = "Out-Anom-NETW_DUPL"; // can be omitted, by default name of a DB file is used
+                this.lineColor = "#009966";
+            },
+            cursor: null, //can be declared, null or omitted
+            scrollBar: null, //can be declared, null or omitted
+            legend: null //can be declared, null or omitted
+        },
+        null, //callBack function, here default is used
+        "average", //name of consolidation function for server
+        100); //number of points to request
+
+chartTCPAnomOut.addSource("tcp_anomalies_out.idx5.rrd", //name of rrd file on a server (it will be sanitized and looked for only in preconfigured directories)
+        {   categoryAxis: null, //can be declared, null or omitted
+            valueAxis: null, //can be declared, null or omitted
+            graph: function() {
+                this.valueField = "AnomOutIdx5";  //must present with at least this.valueField = "name". Can be any name, but different within one GraphBundle instance.
+                this.title = "Out-Anom-FLOW_CTRL"; // can be omitted, by default name of a DB file is used
+                this.lineColor = "#FF33FF";
+            },
+            cursor: null, //can be declared, null or omitted
+            scrollBar: null, //can be declared, null or omitted
+            legend: null //can be declared, null or omitted
+        },
+        null, //callBack function, here default is used
+        "average", //name of consolidation function for server
+        100); //number of points to request*/
+
+var chartTCPAnomIn = new GraphBundle(
+        "TCPAnomIn", //tstat - just name for this instance
+        "chartdiv2", // chartdiv - id of document node "div", where chart will be drawn into
+        function() {
+            this.title = 'TCP Anomalies. Ingoing';
+            this.size = 24;             // can be omitted
+            this.color = '#000000';     // can be omitted
+            this.opacity = 0;           // can be omitted
+            this.bold = true;           // can be omitted
+        }
+);
+chartTCPAnomIn.addSource("tcp_anomalies_in.idx0.rrd", //name of rrd file on a server (it will be sanitized and looked for only in preconfigured directories)
+        {   categoryAxis: null, //can be declared, null or omitted
+            valueAxis: function() {
+                this.offset = 0; // this line makes the axis to appear detached from plot area
+                this.gridAlpha = 0;
+                this.axisColor = "#000000";
+                this.axisThickness = 2;
+            },
+            graph: function() {
+                this.valueField = "AnomInIdx0"; //must present with at least this.valueField = "name". Can be any name, but different within one GraphBundle instance.
+                this.title = "In-Anom-IN-SEQ"; // can be omitted, by default name of a DB file is used
+                this.lineColor = "#ff6600";
+            },
+            cursor: null, //can be declared, null or omitted
+            scrollBar: null, //can be declared, null or omitted
+            legend: null //can be declared, null or omitted
+        },
+        null, //callBack function, here default is used
+        "max", //name of consolidation function for server
+        100); //number of points to request
+
+chartTCPAnomIn.addSource("tcp_anomalies_in.idx1.rrd", //name of rrd file on a server (it will be sanitized and looked for only in preconfigured directories)
+        {   categoryAxis: null, //can be declared, null or omitted
+            valueAxis: null, //can be declared, null or omitted
+            graph: function() {
+                this.valueField = "AnomInIdx1";  //must present with at least this.valueField = "name". Can be any name, but different within one GraphBundle instance.
+                this.title = "In-Anom-RTX_RTO"; // can be omitted, by default name of a DB file is used
+                this.lineColor = "#0000FF";
+            },
+            cursor: null, //can be declared, null or omitted
+            scrollBar: null, //can be declared, null or omitted
+            legend: null //can be declared, null or omitted
+        },
+        null, //callBack function, here default is used
+        "average", //name of consolidation function for server
+        100); //number of points to request
+
+chartTCPAnomIn.addSource("tcp_anomalies_in.idx2.rrd", //name of rrd file on a server (it will be sanitized and looked for only in preconfigured directories)
+        {   categoryAxis: null, //can be declared, null or omitted
+            valueAxis: null, //can be declared, null or omitted
+            graph: function() {
+                this.valueField = "AnomInIdx2";  //must present with at least this.valueField = "name". Can be any name, but different within one GraphBundle instance.
+                this.title = "In-Anom-RTX_FR"; // can be omitted, by default name of a DB file is used
+                this.lineColor = "#99FF66";
+            },
+            cursor: null, //can be declared, null or omitted
+            scrollBar: null, //can be declared, null or omitted
+            legend: null //can be declared, null or omitted
+        },
+        null, //callBack function, here default is used
+        "average", //name of consolidation function for server
+        100); //number of points to request
+
+chartTCPAnomIn.addSource("tcp_anomalies_in.idx3.rrd", //name of rrd file on a server (it will be sanitized and looked for only in preconfigured directories)
+        {   categoryAxis: null, //can be declared, null or omitted
+            valueAxis: null, //can be declared, null or omitted
+            graph: function() {
+                this.valueField = "AnomInIdx3";  //must present with at least this.valueField = "name". Can be any name, but different within one GraphBundle instance.
+                this.title = "In-Anom-REORD"; // can be omitted, by default name of a DB file is used
+                this.lineColor = "#996600";
+            },
+            cursor: null, //can be declared, null or omitted
+            scrollBar: null, //can be declared, null or omitted
+            legend: null //can be declared, null or omitted
+        },
+        null, //callBack function, here default is used
+        "average", //name of consolidation function for server
+        100); //number of points to request
+
+chartTCPAnomIn.addSource("tcp_anomalies_in.idx4.rrd", //name of rrd file on a server (it will be sanitized and looked for only in preconfigured directories)
+        {   categoryAxis: null, //can be declared, null or omitted
+            valueAxis: null, //can be declared, null or omitted
+            graph: function() {
+                this.valueField = "AnomInIdx4";  //must present with at least this.valueField = "name". Can be any name, but different within one GraphBundle instance.
+                this.title = "In-Anom-NETW_DUPL"; // can be omitted, by default name of a DB file is used
+                this.lineColor = "#009966";
+            },
+            cursor: null, //can be declared, null or omitted
+            scrollBar: null, //can be declared, null or omitted
+            legend: null //can be declared, null or omitted
+        },
+        null, //callBack function, here default is used
+        "average", //name of consolidation function for server
+        100); //number of points to request
+
+chartTCPAnomIn.addSource("tcp_anomalies_in.idx5.rrd", //name of rrd file on a server (it will be sanitized and looked for only in preconfigured directories)
+        {   categoryAxis: null, //can be declared, null or omitted
+            valueAxis: null, //can be declared, null or omitted
+            graph: function() {
+                this.valueField = "AnomInIdx5";  //must present with at least this.valueField = "name". Can be any name, but different within one GraphBundle instance.
+                this.title = "In-Anom-FLOW_CTRL"; // can be omitted, by default name of a DB file is used
+                this.lineColor = "#FF33FF";
+            },
+            cursor: null, //can be declared, null or omitted
+            scrollBar: null, //can be declared, null or omitted
+            legend: null //can be declared, null or omitted
+        },
+        null, //callBack function, here default is used
+        "average", //name of consolidation function for server
+        100); //number of points to request
+
+
+var chartRTT = new GraphBundle(
+        "RTT", //tstat - just name for this instance
+        "chartdiv3", // chartdiv - id of document node "div", where chart will be drawn into
+        function() {
+            this.title = 'TCP RTT. Both directions.';
+            this.size = 24;             // can be omitted
+            this.color = '#000000';     // can be omitted
+            this.opacity = 0;           // can be omitted
+            this.bold = true;           // can be omitted
+        }
+);
+chartRTT.addSource("tcp_rtt_max_out.avg.rrd", //name of rrd file on a server (it will be sanitized and looked for only in preconfigured directories)
+        {   categoryAxis: null, //can be declared, null or omitted
+            valueAxis: function() {
+                this.offset = 0; // this line makes the axis to appear detached from plot area
+                this.gridAlpha = 0;
+                this.axisColor = "#000000";
+                this.axisThickness = 2;
+            },
+            graph: function() {
+                this.valueField = "RTT_MAX-out-avg"; //must present with at least this.valueField = "name". Can be any name, but different within one GraphBundle instance.
+                this.title = "Out-RTT_MAX-avg"; // can be omitted, by default name of a DB file is used
+                this.lineColor = "#ff6600"
+            },
+            cursor: null, //can be declared, null or omitted
+            scrollBar: null, //can be declared, null or omitted
+            legend: null //can be declared, null or omitted
+        },
+        null, //callBack function, here default is used
+        "average", //name of consolidation function for server
+        100); //number of points to request
+chartRTT.addSource("tcp_rtt_avg_out.max.rrd", //name of rrd file on a server (it will be sanitized and looked for only in preconfigured directories)
+        {   categoryAxis: null, //can be declared, null or omitted
+            valueAxis: null, // previous valueAxis settings will be used
+            graph: function() {
+                this.valueField = "RTT_AVG-out-max"; //must present with at least this.valueField = "name". Can be any name, but different within one GraphBundle instance.
+                this.title = "Out-RTT_AVG-max"; // can be omitted, by default name of a DB file is used
+                this.lineColor = "#0000FF";
+            },
+            cursor: null, //can be declared, null or omitted
+            scrollBar: null, //can be declared, null or omitted
+            legend: null //can be declared, null or omitted
+        },
+        null, //callBack function, here default is used
+        "average", //name of consolidation function for server
+        100); //number of points to request
+chartRTT.addSource("tcp_rtt_max_in.avg.rrd", //name of rrd file on a server (it will be sanitized and looked for only in preconfigured directories)
+        {   categoryAxis: null, //can be declared, null or omitted
+            valueAxis: null,
+            graph: function() {
+                this.valueField = "RTT_MAX-in-avg"; //must present with at least this.valueField = "name". Can be any name, but different within one GraphBundle instance.
+                this.title = "In-RTT_MAX-avg"; // can be omitted, by default name of a DB file is used
+                this.lineColor = "#99FF66";
+            },
+            cursor: null, //can be declared, null or omitted
+            scrollBar: null, //can be declared, null or omitted
+            legend: null //can be declared, null or omitted
+        },
+        null, //callBack function, here default is used
+        "average", //name of consolidation function for server
+        100); //number of points to request
+chartRTT.addSource("tcp_rtt_avg_in.max.rrd", //name of rrd file on a server (it will be sanitized and looked for only in preconfigured directories)
+        {   categoryAxis: null, //can be declared, null or omitted
+            valueAxis: null,
+            graph: function() {
+                this.valueField = "RTT_AVG-in-max"; //must present with at least this.valueField = "name". Can be any name, but different within one GraphBundle instance.
+                this.title = "In-RTT_AVG-max"; // can be omitted, by default name of a DB file is used
+                this.lineColor = "#996600";
+            },
+            cursor: null, //can be declared, null or omitted
+            scrollBar: null, //can be declared, null or omitted
+            legend: null //can be declared, null or omitted
+        },
+        null, //callBack function, here default is used
+        "average", //name of consolidation function for server
+        100); //number of points to request
+chartRTT.addSource("tcp_interrupted.idx0.rrd", //name of rrd file on a server (it will be sanitized and looked for only in preconfigured directories)
+        {   categoryAxis: null, //can be declared, null or omitted
+            valueAxis: function() {
+                this.offset = 50; // this line makes the axis to appear detached from plot area
+                this.gridAlpha = 0;
+                this.axisColor = "#009966";
+                this.axisThickness = 2;
+            },
+            graph: function() {
+                this.valueField = "TCP-interIdx0"; //must present with at least this.valueField = "name". Can be any name, but different within one GraphBundle instance.
+                this.title = "TCP-Interrupted Idx0"; // can be omitted, by default name of a DB file is used
+                this.lineColor = "#009966";
+            },
+            cursor: null, //can be declared, null or omitted
+            scrollBar: null, //can be declared, null or omitted
+            legend: null //can be declared, null or omitted
+        },
+        null, //callBack function, here default is used
+        "average", //name of consolidation function for server
+        100); //number of points to request
+
+var chartIPthroughput = new GraphBundle(
+        "IPtp", //tstat - just name for this instance
+        "chartdiv4", // chartdiv - id of document node "div", where chart will be drawn into
+        function() {
+            this.title = 'IP throughput (bit/s)';
+            this.size = 24;             // can be omitted
+            this.color = '#000000';     // can be omitted
+            this.opacity = 0;           // can be omitted
+            this.bold = true;           // can be omitted
+        }
+);
+chartIPthroughput.addSource("ip_bitrate_out.idx3.rrd", //name of rrd file on a server (it will be sanitized and looked for only in preconfigured directories)
+        {   categoryAxis: null, //can be declared, null or omitted
+            valueAxis: function() {
+                this.offset = 0; // this line makes the axis to appear detached from plot area
+                this.gridAlpha = 0;
+                this.axisColor = "#000000";
+                this.axisThickness = 2;
+            },
+            graph: function() {
+                this.valueField = "IP_bitrate_out"; //must present with at least this.valueField = "name". Can be any name, but different within one GraphBundle instance.
+                this.title = "Out IP-bitrate"; // can be omitted, by default name of a DB file is used
+                this.lineColor = "#ff6600";
+            },
+            cursor: null, //can be declared, null or omitted
+            scrollBar: null, //can be declared, null or omitted
+            legend: null //can be declared, null or omitted
+        },
+        null, //callBack function, here default is used
+        "average", //name of consolidation function for server
+        100); //number of points to request
+chartIPthroughput.addSource("ip_bitrate_in.idx3.rrd", //name of rrd file on a server (it will be sanitized and looked for only in preconfigured directories)
+        {   categoryAxis: null, //can be declared, null or omitted
+            valueAxis: null,
+            graph: function() {
+                this.valueField = "IP_bitrate_in"; //must present with at least this.valueField = "name". Can be any name, but different within one GraphBundle instance.
+                this.title = "In IP-bitrate"; // can be omitted, by default name of a DB file is used
+                this.lineColor = "#0000FF";
+            },
+            cursor: null, //can be declared, null or omitted
+            scrollBar: null, //can be declared, null or omitted
+            legend: null //can be declared, null or omitted
+        },
+        null, //callBack function, here default is used
+        "average", //name of consolidation function for server
+        100); //number of points to request
+
+
+</script>
+</head>
+
+<body>
+<div id="chartdiv" style="width: 100%; height: 400px;"></div>
+<div id="btspanel" style="margin-left:35px;">
+    <input type="radio" checked="checked" name="group1" id="rb1" onclick="chartTCPAnomOut.setPanSelect('rb1')"/>Select and zoom in
+    <input type="radio" name="group1" id="rb2" onclick="chartTCPAnomOut.setPanSelect('rb1')"/>Pan
+    <input type="button" id="trkBtn" onmousedown="chartTCPAnomOut.trackerBtnHandler('trkBtn')" value="Enable tracking"/>
+    <input type="button" id="liveBtn" onmousedown="chartTCPAnomOut.liveBtnHandler('liveBtn')" value="Enable real-time update"/>
+</div>
+<div id="chartdiv2" style="width: 100%; height: 400px;"></div>
+<div id="btspanel2" style="margin-left:35px;">
+    <input type="radio" checked="checked" name="group2" id="rb3" onclick="chartTCPAnomIn.setPanSelect('rb3')">Select and zoom in
+    <input type="radio" name="group2" id="rb4" onclick="chartTCPAnomIn.setPanSelect('rb3')">Pan
+    <input type="button" id="trkBtn2" onmousedown="chartTCPAnomIn.trackerBtnHandler('trkBtn2')" value="Enable tracking">
+    <input type="button" id="liveBtn2" onmousedown="chartTCPAnomIn.liveBtnHandler('liveBtn2')" value="Enable real-time update">
+</div>
+<div id="chartdiv3" style="width: 100%; height: 400px;"></div>
+<div id="btspanel3" style="margin-left:35px;">
+    <input type="radio" checked="checked" name="group3" id="rb5" onclick="chartRTT.setPanSelect('rb5')">Select and zoom in
+    <input type="radio" name="group3" id="rb6" onclick="chartRTT.setPanSelect('rb5')">Pan
+    <input type="button" id="trkBtn3" onmousedown="chartRTT.trackerBtnHandler('trkBtn3')" value="Enable tracking">
+    <input type="button" id="liveBtn3" onmousedown="chartRTT.liveBtnHandler('liveBtn3')" value="Enable real-time update">
+</div>
+<div id="chartdiv4" style="width: 100%; height: 400px;"></div>
+<div id="btspanel4" style="margin-left:35px;">
+    <input type="radio" checked="checked" name="group4" id="rb7" onclick="chartIPthroughput.setPanSelect('rb7')">Select and zoom in
+    <input type="radio" name="group4" id="rb8" onclick="chartIPthroughput.setPanSelect('rb7')">Pan
+    <input type="button" id="trkBtn4" onmousedown="chartIPthroughput.trackerBtnHandler('trkBtn4')" value="Enable tracking">
+    <input type="button" id="liveBtn4" onmousedown="chartIPthroughput.liveBtnHandler('liveBtn4')" value="Enable real-time update">
+</div>
+</body>
+
+</html>

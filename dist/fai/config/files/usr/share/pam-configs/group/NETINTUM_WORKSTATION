@@ -1,0 +1,7 @@
+Name: Grant access to additional groups
+Default: yes
+Priority: 0
+Auth-Interactive-Only: yes
+Auth-Type: Additional
+Auth-Final:
+	optional	pam_group.so

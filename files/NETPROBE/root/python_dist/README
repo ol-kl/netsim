@@ -1,0 +1,35 @@
+WSGI_serv_py3/		-WSGI compliant fastcgi interface implementation for Python 3.2.3 with bugfixes. To install,
+                         run "setup.py install". Folder WSGI_serv_py3/flup/server/ contains diff files to reflect introduced
+			 changes compared to original. This Python egg installation may install original unmodified source
+			 files, therefore one should check them for correspondence to those in flup/server sub dir, otherwise
+			 apply diff files provided in that dir to them (fcgi_base.py.diff, threadpool.py.diff).
+distribute_setup.py 	-installation script for distutils, they allow for easy and fast installation
+			 of custom PYthon modules (hete it's necessary to install WSGI-FastCGI module)
+
+The python version 3.2.3 or 3.3.0 (in this folder)
+must be compiled, built and installed on the system.
+The server back-end rrd_processing.py was tested with
+version 3.2.3, but should work also with 3.3.0
+All the following work must be done manually:
+1. Install python3.3.0 (all necessary packages 
+for complining and building should be installed
+during OS image building by FAI):
+	tar -xf Python-archive
+	cd Python-archive
+	configure
+	make
+	make altinstall
+2. Install WSGI-compliant FastCGI gateway implementation module:
+	python3.3 ../distribute_setup.py
+	cd ../WSGI_serv_py3
+	python3.3 setup.py install
+
+That'all, everything needed for server scipt to work is
+installed and ready.
+
+#TODO: Actually all this work should be done automatically
+either by hook script during FAI OS image creation, or manually
+after the Linux root FS was created but not yet compressed into
+squashfs image: on this stage one just makes chroot and performs
+all the above listed operations.
+

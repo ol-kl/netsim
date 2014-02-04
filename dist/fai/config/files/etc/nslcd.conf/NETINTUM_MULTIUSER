@@ -1,0 +1,50 @@
+# /etc/nslcd.conf
+# nslcd configuration file. See nslcd.conf(5)
+# for details.
+
+# The user and group nslcd should run as.
+uid nslcd
+gid nslcd
+
+# The location at which the LDAP server(s) should be reachable.
+uri ldaps://ldap.net.in.tum.de
+
+# The search scope.
+scope one
+
+# The search base that will be used for all queries.
+base dc=net,dc=in,dc=tum,dc=de
+
+base   group    ou=groups,dc=net,dc=in,dc=tum,dc=de
+scope  group    onelevel
+filter group    (objectClass=posixGroup)
+base   passwd   ou=users,dc=net,dc=in,dc=tum,dc=de
+scope  passwd   onelevel
+filter passwd   (objectClass=posixAccount)
+base   shadow   ou=users,dc=net,dc=in,dc=tum,dc=de
+scope  shadow   onelevel
+filter shadow   (objectClass=posixAccount)
+
+# The LDAP protocol version to use.
+#ldap_version 3
+
+# The DN to bind with for normal lookups.
+binddn cn=nssldap,ou=admin,dc=net,dc=in,dc=tum,dc=de
+bindpw $NSSLDAPPASS
+
+# The DN used for password modifications by root.
+#rootpwmoddn cn=admin,dc=example,dc=com
+
+# SSL options
+#ssl off
+#tls_reqcert demand
+tls_reqcert hard
+#tls_checkpeer  yes
+#tls_checkpeer  hard
+tls_cacertfile /etc/ssl/certs/ca-certificates.crt
+
+#use_sasl       on
+#krb5_ccname    FILE:/etc/.ldapcache
+
+
+# vim: set noet ts=20 sw=20:

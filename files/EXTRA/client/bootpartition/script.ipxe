@@ -1,0 +1,23 @@
+#!ipxe
+prompt --key 0x02 --timeout 2000 Press Ctrl-B to get iPXE shell prompt... && shell ||
+echo Opening net1 interface
+ifopen net1
+echo Ok
+echo Creating vlan subinterface with tag  99
+vcreate --tag 99 net1
+echo Ok
+echo Bringing up the net1-99 virtual interface
+ifopen net1-99
+echo Ok
+echo Trying to get ip address via DHCP
+:dhcp
+dhcp net1-99 || goto dhcp
+echo Ok
+echo Downloading initrd
+initrd tftp://10.0.3.2/initrd.img
+echo Ok
+echo Downloading kernel
+chain tftp://10.0.3.2/vmlinuz initrd=initrd.img apm=power-off vga=791 nomce boot=live ssh=netsim persistent noquick nostats noeject noprompt noautoconfig keyboard=de ethdevice=vlan99 vlans_eth0=99,20,30 fetch=http://10.0.3.2/grml64-small.squashfs netconfig=http://10.0.3.2/remote_configs/client_server.tbz
+echo Ok
+echo Going to boot...
+boot

@@ -1,0 +1,30 @@
+#!/bin/bash
+
+# vim: ft=sh noet sw=4 ts=4
+
+set -e
+
+declare NL='
+'
+
+notice() {
+        echo "${@:-EMPTY_NOTICE}" >&2
+}
+
+qwe() {
+        notice "${@:-ERROR}"
+        exit 1
+}
+
+declare BASENAME="$(readlink -f "$0")"
+declare BASEDIR="$(dirname "$BASENAME")"
+
+mount /mnt/root && install_p /mnt/root XENDOM_P && \
+	cat <<-EOF>/mnt/root/etc/network/interfaces
+		auto lo
+		iface lo inet loopback
+
+		allow-hotplug eth0
+		iface eth0 inet dhcp
+	EOF
+[ $? == 0 ] && shutdown -h now

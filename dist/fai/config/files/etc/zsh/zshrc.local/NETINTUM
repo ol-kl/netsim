@@ -1,0 +1,84 @@
+umask 022
+unsetopt transient_rprompt
+DONTSETRPROMPT=1
+
+JOBCOUNT="%(1j.%j.)"
+
+if zrcautoload colors && colors 2>/dev/null ; then
+    BLUE="%{${fg[blue]}%}"
+    RED="%{${fg_bold[red]}%}"
+    GREEN="%{${fg[green]}%}"
+    CYAN="%{${fg[cyan]}%}"
+    MAGENTA="%{${fg[magenta]}%}"
+    YELLOW="%{${fg[yellow]}%}"
+    WHITE="%{${fg[white]}%}"
+    NO_COLOUR="%{${reset_color}%}"
+else
+    BLUE=$'%{\e[1;34m%}'
+    RED=$'%{\e[1;31m%}'
+    GREEN=$'%{\e[1;32m%}'
+    CYAN=$'%{\e[1;36m%}'
+    WHITE=$'%{\e[1;37m%}'
+    MAGENTA=$'%{\e[1;35m%}'
+    YELLOW=$'%{\e[1;33m%}'
+    NO_COLOUR=$'%{\e[0m%}'
+fi
+
+if [[ "$TERM" != dumb ]]; then
+	RPROMPT="${RED}${JOBCOUNT} ${GREEN}%! ${BLUE}%L ${NO_COLOUR}%y %U%~%u %B%n@%m%b %D %*"
+
+	if (( EUID != 0 )); then
+		PROMPT="${BLUE}${EXITCODE}${NO_COLOUR}"'${vcs_info_msg_0_}'"%B%#%b "
+	else
+		PROMPT="${RED}${EXITCODE}${NO_COLOUR}"'${vcs_info_msg_0_}'"${RED}%B%#%b${NO_COLOUR} "
+	fi
+fi
+
+for color in BLUE RED GREEN CYAN YELLOW MAGENTA WHITE ; unset $color
+
+
+#if (( EUID != 0 )); then
+#	PREPATH="${HOME}/bin:/sbin:/usr/sbin:/usr/local/sbin"
+#else
+#	PREPATH="${HOME}/bin"
+#fi
+#
+#if [[ "$(uname)" == Darwin ]]; then
+#	PREPATH="${HOME}/bin:/opt/local/bin:/opt/local/sbin:/usr/local/bin:/usr/local/sbin:/usr/sbin:/sbin"
+#fi
+#
+#case "$PATH" in
+#	"${PREPATH}:"*) ;;
+#	*) export PATH="${PREPATH}:${PATH}:/command:/var/qmail/bin" ;;
+#esac
+
+_ssh_auth_save() {
+	local SOCK="$HOME/.screen/ssh-auth-sock.$HOSTNAME"
+
+	[[ -z "$SSH_AUTH_SOCK" ]] && return
+	[[ "$SSH_AUTH_SOCK" == "$SOCK" ]] && return
+
+	if ! mkdir -m 700 -p "$HOME/.screen"; then
+		echo "could not mkdir $HOME/.screen" >&2
+		return
+	fi
+	ln -sf "$SSH_AUTH_SOCK" "$SOCK"
+}
+
+alias screen='_ssh_auth_save; export HOSTNAME=$(hostname); /usr/bin/screen -c /etc/screenrc.xlk'
+
+alias grep='grep --colour=auto'
+alias lla='ls -la'
+lll() { ls -la "$@" | less; }
+
+#export LESS="${LESS:-less} -i"
+export LESS="${LESS:+ }-i"
+
+alias mq='hg -R $(hg root)/.hg/patches'
+
+svim(){ screen -ln -t "${1}" vim "${1}" }
+mlog(){ busybox tail -F $@ | tai64nlocal }
+smlog(){ screen -ln -t mlog sh -c "busybox tail -F $* | tai64nlocal" }
+t(){ local s=setopt t=transientrprompt; $s | fgrep -q $t && un$s $t || $s $t }
+
+export VTYSH_PAGER=more

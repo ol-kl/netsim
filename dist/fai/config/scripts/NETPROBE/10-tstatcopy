@@ -1,0 +1,38 @@
+#!/bin/bash
+# Copy all files related to class NETPROBE in chroot dir, namely those of tstat utility. Also specific user for the app is created and chown, chmod is invoked
+
+# set -e #exit upon error return
+export SCR_NAME=$(basename $0)
+
+err() {
+	echo "Error in ${SCR_NAME}: $1"
+	exit 1
+}
+
+FAI_CONFIGDIR="/etc/grml/fai/config"
+
+# creating system user and group for tstat
+if ! addgroup --system tstat; then
+	err "Unable to add group --> tstat"
+fi
+
+if ! adduser --system --no-create-home --ingroup tstat tstat; then
+	err "Unable to add user --> tstat"
+fi
+
+# copying files for tstat and changing permissions + some magic with sym links (required by program's bins)
+if ! fcopy -B -c NETPROBE -F ${FAI_CONFIGDIR}/files/NETPROBE_list -m tstat,tstat,7755 -v; then
+	err "fcopy failed - look in logs"
+fi
+
+[ -e ${FAI_ROOT}/etc/init.d/parition.sh ] && chown root:root ${FAI_ROOT}/etc/init.d/parition.sh
+
+LIB=${FAI_ROOT}/lib
+
+if [ -e ${LIB}/libtstat.so.0.0.0 ]; then
+	ln -s ${LIB}/libtstat.so.0.0.0 ${LIB}/libtstat.so
+	ln -s ${LIB}/libtstat.so.0.0.0 ${LIB}/libtstat.so.0
+fi
+echo '### Work on tstat files is done ###'
+exit 0
+

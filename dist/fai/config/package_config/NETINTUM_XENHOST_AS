@@ -1,0 +1,17 @@
+PACKAGES aptitude
+
+lighttpd
+spawn-fcgi
+
+isc-dhcp-server
+radvd
+
+openvpn
+openvpn-blacklist
+
+#daemontools
+#daemontools-run
+#ucspi-proxy
+#ucspi-unix
+#ucspi-tcp
+#ucspi-tcp-ipv6

@@ -1,0 +1,12 @@
+for x in $(cat /proc/cmdline); do
+	case ${x} in
+	iscsi_configuri=*)
+		ISCSI_TARGET_NAME=x
+		ISCSI_TARGET_IP=x
+		;;
+	iscsi_configurl=*)
+		ISCSI_TARGET_NAME=x
+		ISCSI_TARGET_IP=x
+		;;
+	esac
+done

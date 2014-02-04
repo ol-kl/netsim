@@ -1,0 +1,21 @@
+#!/bin/bash
+
+set -u
+set -e
+
+if [ -r /etc/resolv.conf ]; then
+	egrep -v '^nameserver\s' /etc/resolv.conf > $target/etc/resolv.conf.tmp
+	egrep '^nameserver\s' /etc/resolv.conf | sort -u | tail -n 3 >> $target/etc/resolv.conf.tmp
+	chmod 644 $target/etc/resolv.conf.tmp
+
+	if [ -e $target/etc/resolv.conf -o -L $target/etc/resolv.conf ]; then
+		rm $target/etc/resolv.conf.tmp
+	else
+		mv $target/etc/resolv.conf.tmp $target/etc/resolv.conf
+	fi
+fi
+
+# apt ...
+
+## END OF FILE #################################################################
+# vim:ft=sh expandtab ai tw=80 tabstop=4 shiftwidth=3

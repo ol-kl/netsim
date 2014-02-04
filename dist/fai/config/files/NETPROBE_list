@@ -1,0 +1,10 @@
+/bin/tstat
+/bin/demo
+/include/libtstat.h
+/lib/libtstat.so.0.0.0
+/lib/libtstat.la
+/lib/libtstat.a
+/etc/init.d/partition.sh
+/etc/init.d/partition.awk
+/etc/init.d/partition.bash
+/etc/noprompt

@@ -1,0 +1,12 @@
+PACKAGES aptitude
+
+lighttpd
+spawn-fcgi
+
+isc-dhcp-server
+radvd
+
+openvpn
+openvpn-blacklist
+
+xen-qemu-dm

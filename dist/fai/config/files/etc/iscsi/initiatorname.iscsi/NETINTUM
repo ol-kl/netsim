@@ -1,0 +1,14 @@
+GenerateName=yes
+
+for x in $(cat /proc/cmdline); do
+	case ${x} in
+	iscsi_configuri=*)
+		#iscsi_netconf_pre
+		eval $(wget -O - "${x#iscsi_configuri=}")
+		;;
+	iscsi_configurl=*)
+		#iscsi_netconf_pre
+		eval $(wget -O - "${x#iscsi_configurl=}")
+		;;
+	esac
+done

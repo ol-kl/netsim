@@ -1,0 +1,36 @@
+Notice: files in folders "bootpartition" for both client/server and probe
+machines MUST be copied manually on each of those machines before
+any other operations. Booting partition must be created/allocated on HDD
+or USB device connected to those machines and all files from above
+mentioned folder must be copied there.
+Upon creation of booting partition, it must be done bootable through
+syslinux bootloader.
+#TODO: the following files in folder EXTRA are copied manually. In case of
+"bootpartition" it's inevitable, though with other files - they should
+be incorporated into root file system of relevant machines upon stage
+of squashfs image creation by FAI. Here the point is that in current
+setup the FAI class NETPROBE (root file system) is both for client/server
+machine and for probe one itself. Thus some conflict of roles appears when
+using some files being the same on these machines. It can be avoided by
+creating a new class (NETCLIENT for example) where all these files from
+EXTRA/client will be placed (except "bootpartition" of course).
+Then build.sh script along with all relevant and dependent ones must be
+corrected, as NETSERVER class image will then need ready to use squashfs
+image of this new class (besides NETPROBE being already implemented) because
+this new class squashfs image must in on web server directory of NETSERVER
+class.
+
+EXTRA/client		-files to be copied on client/server machine
+			 manually
+EXTRA/probe		-files to be copied on probe machine manually
+NETPROBE/		-files to be added to root file system of image 
+			 being used (downloaded automatically) by probe
+			 and server/client machines
+NETSERV/		-files to be added to root file system of image
+			 being used by router/netboot server machine
+NETSIM_DEFAULT/		-files to be added to root file system of all
+			 images being used by machines.
+switch.cfg		-configuration files for switch hardware being used
+			 in test-bed topology. It should be uploaded on the HW
+			 through web-interface. Management IP address of the
+			 switch is 192.168.16.1

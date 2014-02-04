@@ -1,0 +1,25 @@
+#!/bin/sh
+
+PREREQ=""
+
+prereqs()
+{
+	echo "$PREREQ"
+}
+
+case $1 in
+	prereqs)
+		prereqs
+		exit 0
+	;;
+esac
+
+if [ -z "$DESTDIR" ]; then
+	err "DESTDIR undefined"
+	exit 1
+fi
+
+DESTMDADMCONF=$DESTDIR/etc/mdadm/mdadm.conf
+sed -ir 's/^ARRAY\b.*$//' $DESTMDADMCONF
+
+exit 0

@@ -1,0 +1,8 @@
+PACKAGES aptitude
+
+alpine
+flashplugin-nonfree
+gdm
+libpam-gnome-keyring
+portmap
+openoffice.org

@@ -1,0 +1,4 @@
+BASE	dc=net,dc=in,dc=tum,dc=de
+URI	ldaps://ldap.net.in.tum.de
+TLS_REQCERT	hard
+TLS_CACERT	/etc/ssl/certs/ca-certificates.crt

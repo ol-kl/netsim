@@ -1,0 +1,5 @@
+default grml
+label grml
+  say Booting the kernel using wget from http://10.0.2.2 for Server machine ...
+  kernel vmlinuz
+  append initrd=initrd.img apm=power-off vga=791 nomce boot=live ssh=netsim persistent noquick nostats noeject nopromt nonetworking noautoconfig keyboard=de xkeyboard=de fetch=http://10.0.2.2/name_of_squashfs ignore_bootid

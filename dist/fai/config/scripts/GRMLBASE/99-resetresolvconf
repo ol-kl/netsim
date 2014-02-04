@@ -1,0 +1,11 @@
+#!/bin/bash
+################################################################################
+
+set -u
+set -e
+
+echo "search net.in.tum.de" > $target/etc/resolv.conf
+
+
+## END OF FILE #################################################################
+# vim:ft=sh expandtab ai tw=80 tabstop=4 shiftwidth=2

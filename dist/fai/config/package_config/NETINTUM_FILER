@@ -1,0 +1,13 @@
+PACKAGES aptitude AMD64
+linux-image-amd64
+linux-headers-2.6-amd64
+
+PACKAGES aptitude I386
+linux-image
+linux-headers-2.6
+
+PACKAGES aptitude
+
+iscsitarget-dkms
+iscsitarget
+#iscsitarget-module

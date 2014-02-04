@@ -1,0 +1,85 @@
+#!/bin/bash
+
+# vim: noet sw=4 ts=4
+
+[ -f /root/iscsihelper.log ] && exit 0
+
+exec 2>&1
+exec >/root/iscsihelper.log
+
+LIVE=
+InitiatorName=
+ISCSI_IN_PASSWORD=
+ISCSI_PASSWORD=
+ISCSI_TARGET_IP=
+ISCSI_TARGET_NAME=
+ISCSI_USERNAME=
+ISCSI_INITIATOR=
+ISCSI_IN_USERNAME=
+ISCSI_TARGET_PORT=
+
+for x in $(cat /proc/cmdline); do
+	case ${x} in
+		boot=live)
+			LIVE=Y
+		;;
+		iscsi_configuri=*)
+			eval $(wget -O - "${x#iscsi_configuri=}")
+		;;
+		iscsi_configurl=*)
+			eval $(wget -O - "${x#iscsi_configurl=}")
+		;;
+	esac
+done
+
+[ -n "$LIVE" -a -n "$InitiatorName" ] || exit 0
+
+mkdir -p -m 755 /etc/iscsi
+
+for x in iscsid.conf initiatorname.iscsi; do
+	[ -f "/etc/iscsi/$x" ] && mv -f "/etc/iscsi/$x" "/etc/iscsi/${x}.orig"
+done
+
+
+umask 22
+
+echo "InitiatorName=$InitiatorName" > /etc/iscsi/initiatorname.iscsi
+
+umask 77
+
+cat <<- EOF > /etc/iscsi/iscsid.conf
+	node.startup = automatic
+	node.session.auth.authmethod = CHAP
+	node.session.auth.username = $ISCSI_USERNAME
+	node.session.auth.password = $ISCSI_PASSWORD
+	node.session.auth.username_in = $ISCSI_IN_USERNAME
+	node.session.auth.password_in = $ISCSI_IN_PASSWORD
+	#discovery.sendtargets.auth.authmethod = CHAP
+	#discovery.sendtargets.auth.username = \$ISCSI_USERNAME
+	#discovery.sendtargets.auth.password = \$ISCSI_PASSWORD
+	#discovery.sendtargets.auth.username_in = username_in
+	#discovery.sendtargets.auth.password_in = password_in
+
+	node.session.timeo.replacement_timeout = 120
+	node.conn[0].timeo.login_timeout = 15
+	node.conn[0].timeo.logout_timeout = 15
+	#node.conn[0].timeo.noop_out_interval = 5
+	node.conn[0].timeo.noop_out_interval = 10
+	#node.conn[0].timeo.noop_out_timeout = 5
+	node.conn[0].timeo.noop_out_timeout = 15
+	#node.session.err_timeo.abort_timeout = 15
+	#node.session.err_timeo.lu_reset_timeout = 20
+	node.session.iscsi.InitialR2T = No
+	node.session.iscsi.ImmediateData = Yes
+	node.session.iscsi.FirstBurstLength = 262144
+	node.session.iscsi.MaxBurstLength = 16776192
+	node.conn[0].iscsi.MaxRecvDataSegmentLength = 65536
+	node.session.iscsi.FastAbort = Yes
+EOF
+
+invoke-rc.d open-iscsi restart
+
+iscsiadm -m discovery -t sendtargets -p ${ISCSI_TARGET_IP}:${ISCSI_TARGET_PORT:-3260}
+iscsiadm -m node -T "$ISCSI_TARGET_NAME" -p ${ISCSI_TARGET_IP}:${ISCSI_TARGET_PORT:-3260} --login
+
+rebuildfstab

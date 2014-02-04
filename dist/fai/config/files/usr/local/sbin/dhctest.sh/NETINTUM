@@ -1,0 +1,14 @@
+#!/bin/bash
+
+SCRIPT="$(/bin/readlink -f "$0")"
+
+if [ -n "$HOME" ]; then
+	#exec env - /bin/busybox udhcpc -f -i "${1:-eth0}" -n -q -s "$SCRIPT"
+	exec env - /bin/busybox udhcpc -f -i "${1:-eth0}" -n -q -s "$SCRIPT"
+else
+	echo "___start_______________________________________________________________"
+	echo "$@"
+	echo "___env_________________________________________________________________"
+	/usr/bin/printenv
+	echo "___stop________________________________________________________________"
+fi

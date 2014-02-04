@@ -1,0 +1,22 @@
+PACKAGES aptitude
+
+python-ipy
+python-ldap
+
+bind9-host
+curl
+debconf-utils
+fai-setup-storage
+git
+gzip
+ipcalc
+ipmitool
+ipv6calc
+mercurial
+mtools
+open-iscsi
+syslinux
+vim
+
+PACKAGES aptitude GRMLBASE
+grml-live

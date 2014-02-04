@@ -1,0 +1,16 @@
+cgi-bin/rrd_processing_faster_less_precise.py   -version of program with 
+						 support of C lib ElementTree 
+						 class implementation, faster
+						 but less precise
+cgi-bin/rrd_processing.py*	-version of program with ElementTree class
+				 written in Python with some extensions therefore.
+				 Added suppport for comments processing in XML 
+				 files. It's slower, but doesn't distort data samples
+				 timestamps.
+amcharts_2.7.6/  		-JavaScript library required for graph drawing on
+				 web-client side
+databases/			-here RRD DB files are stored. Destination can be 
+				 configured with tstat command arguments
+home.html			-main HTML web-page of web fornt-end.
+rrd_lib.js			-JS library for interaction with server back-end to
+				 query RRD DB files information.

@@ -1,0 +1,11 @@
+# vim: noet ts=10 sw=10
+
+deb	http://deconstruct.net.in.tum.de:3142/deb.grml.org          grml-stable     main
+deb-src	http://deconstruct.net.in.tum.de:3142/deb.grml.org          grml-stable     main
+#deb	http://deconstruct.net.in.tum.de:3142/deb.grml.org          grml-testing    main
+#deb-src	http://deconstruct.net.in.tum.de:3142/deb.grml.org          grml-testing    main
+
+deb	http://deconstruct.net.in.tum.de:3142/cdn.debian.net/debian squeeze         main contrib non-free
+deb-src	http://deconstruct.net.in.tum.de:3142/cdn.debian.net/debian squeeze         main contrib non-free
+deb	http://deconstruct.net.in.tum.de:3142/security.debian.org   squeeze/updates main contrib non-free
+deb-src	http://deconstruct.net.in.tum.de:3142/security.debian.org   squeeze/updates main contrib non-free

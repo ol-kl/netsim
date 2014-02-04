@@ -1,0 +1,1 @@
+version.lo: ../tstat/version.c

@@ -1,0 +1,67 @@
+#!/bin/bash
+# Fixies to runlevel.conf for aumoatic partioning
+#set -x #debugging
+export SCR_NAME=$(basename $0)
+
+FAI_CONFIGDIR='/etc/grml/fai/config'
+
+echo '!!!!! Running NETPROBE scripts... '
+
+err() {
+	echo "Error in ${SCR_NAME}: $1"
+	exit 1
+}
+
+RLC=${FAI_ROOT}/etc/runlevel.conf
+
+#echo "runlevel.conf before editing:"
+#cat $RLC # for debugging
+#echo "-----------------------------"
+
+if cat "${FAI_CONFIGDIR}/files/NETPROBE_list" 2>/dev/null | grep -e "partition.sh" &> /dev/null && [ -e "$RLC" ]; then
+	declare $(cat "${RLC}" | awk "
+		/^[0-9]+/ { 
+		if (! index(\$3,\"S\") )  {
+			arr[i++]=\$1 
+		}
+		else {
+			arr[0]=\$1; i=1
+		} 
+	} 
+	END { 
+	OFS=\"=\"; i=0; 
+	while (arr[i+1] != \"\") { 
+		max=arr[i+1]-arr[i] 
+		if (max > 1) {
+			print \"INDEX\", arr[i]
+			break
+			     }  
+		i++
+				} 
+	}") &>/dev/null
+	if [ -n "$INDEX" ]; then
+		sed -i "1,/${INDEX}/ {/${INDEX}/ a\
+			$((INDEX + 1))	-	2		/etc/init.d/partition.sh
+	}" "$RLC"
+		cat $RLC | grep "partition.sh" &>/dev/null || err "File $RLC was not modified, partition.sh was not inserted" 
+	else
+		sed -i "/THE LAST LINE/ i\99	-	2		/etc/init.d/partition.sh" "$RLC"
+
+	fi
+
+else
+	err 'Either /etc/init.d/partition.sh was not included into runlevel.conf, or
+	/etc/runlevel.conf does not exist / was not created yet'
+fi
+
+#echo "runlevel.conf after editing:"
+#cat $RLC # for debugging
+#echo "-----------------------------"
+
+if ! cat "$RLC" | grep -e '/etc/init.d/partition.sh' &>/dev/null; then
+	echo "Error in script $SCR_NAME: Fils /etc/runlevel.conf was NOT modified"
+	exit 1
+fi
+
+echo '### Fixes to runlevel.conf have been done ###'
+exit 0

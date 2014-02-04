@@ -1,0 +1,15 @@
+PACKAGES aptitude
+
+rrdtool
+tcpreplay
+libpcap0.8
+lighttpd
+build-essential
+libncursesw5-dev
+libreadline5-dev
+libssl-dev
+libgdbm-dev 
+libc6-dev 
+libsqlite3-dev 
+tk-dev
+# Consider adding more packages compared to GRMLBASE (some network packages are missed for sure)

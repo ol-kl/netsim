@@ -1,0 +1,47 @@
+The MIT License (MIT)
+
+Copyright (c) 2012 Oleg Klyudt
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+=================================================================================
+
+Testbed based on tstat. Testbed implements traffic analysis by tstat. The results of analysis are stored in RRD DBs on the server node. The server runs http server with FastCGI python script to parse DBs and serve the data in json strings to requesting clients. Client's part is implemented in JavaScript, which draws the charts in real time. Sources for server's backend and user's interface are located  in /var/www of NETPROBE node. The file structure of the project is ready for automatic deployment based on GRML scripts and FAI. All the nodes of the testbed use net booting through ipxe and syslinux with persistent feature in action. Changes to nodes configs and file systems are enrolled easily through GRML autoconfig scripts.
+
+Mode details can be found in README files in respective folders.
+
+All rights and licences pertain to respective owners. This paticularily applies to Tstat, WSGI conforming Python implementation of FastCGI, AMCharts library, some config files and bash scripts written originally  by  colleagues of Lehrstuhl für Netzarchitekturen und Netzdienste, TU Munich. The rest part of the project contributed by me: shell scripts, config files, JavaScript and Python source code are covered by the above mentioned MIT License.
+
+Those interested only in the web related part of the project, can find all the source code (Python, JavaScript and related libraries) in NETPROBE/var/www. Look at the README file therein.
+
+dist 		-template folder for building squashfs images (and iso images),
+		 should be downloaded and leveraged by means of build.sh script
+		 inside. All files to be addded to target images, configurations,
+		 packages are in there (packages are downloaded).
+files 		-contains extra files to be added to target filesystems (images)
+		 along with some other files (check README in there).
+		 Initially, all files to be added to target FS are placed here 
+		 in folders accroding to FAI classes. Then fai_cp.sh is used
+		 to copy those files in configuration directory of FAI (usually
+		 fai/files) with proper file tree structure. Indeed this file structure
+		 is being used by FAI while creating images, in other words, just placing
+		 files to folder "files" without copying them into fai/files by fai_cp.sh
+		 doesn't mean they will be included in images ultimately.
+fai_cp.sh	-script to copy ready to use root-like structure (tree) organized files
+		 into FAI files folder following classes paradigm.

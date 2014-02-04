@@ -1,0 +1,1 @@
+Boot partition must be created by means of syslinux command with --install and --directory

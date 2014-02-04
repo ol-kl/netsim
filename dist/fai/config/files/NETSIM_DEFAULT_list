@@ -1,0 +1,5 @@
+/etc/initramfs-tools/modules
+/etc/initramfs-tools/scripts/init-premount/vlan
+/etc/initramfs-tools/scripts/live-premount/select_eth_device
+/etc/initramfs-tools/hooks/vlan
+/etc/initramfs-tools/hooks/mdadm

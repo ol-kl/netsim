@@ -1,0 +1,27 @@
+User apache2
+ServerName netsim.tum:80
+AddType application/octet-stream .squashfs
+
+<VirtualHost *:80>
+	ServerAdmin webmaster@localhost
+
+	DocumentRoot /var/www
+	<Directory />
+		Order deny,allow
+		Deny from all
+		Options -FollowSymLinks +Indexes
+		AllowOverride None
+	</Directory>
+	<Directory /var/www/>
+		allow from 10.0 
+	</Directory>
+
+
+	ErrorLog ${APACHE_LOG_DIR}/error.log
+
+	# Possible values include: debug, info, notice, warn, error, crit,
+	# alert, emerg.
+	LogLevel warn
+
+	CustomLog ${APACHE_LOG_DIR}/access.log combined
+</VirtualHost>

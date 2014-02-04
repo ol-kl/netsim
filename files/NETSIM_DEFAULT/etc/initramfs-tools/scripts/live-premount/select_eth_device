@@ -1,0 +1,19 @@
+#!/bin/sh
+
+# Original script by Andreas Teuchert <ant+dl@hsg-kl.de>
+# Modified by Frédéric Boiteux <fboiteux@calistel.com>
+
+PREREQ="blacklist udev"
+
+prereqs()
+{
+	echo "$PREREQ"
+}
+
+case $1 in
+# get pre-requisites
+prereqs)
+	prereqs
+	exit 0
+	;;
+esac

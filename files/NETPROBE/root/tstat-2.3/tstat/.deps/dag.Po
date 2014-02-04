@@ -1,0 +1,1 @@
+dag.o: ../tstat/dag.c

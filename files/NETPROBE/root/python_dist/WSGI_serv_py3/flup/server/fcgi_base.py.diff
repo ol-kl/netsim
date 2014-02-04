@@ -1,0 +1,318 @@
+--- fcgi_base.py	2012-03-26 18:51:40.000000000 +0200
++++ /usr/local/lib/python3.2/site-packages/flup-1.0.3.dev_20120913-py3.2.egg/flup/server/fcgi_base.py	2012-09-13 15:10:10.000000000 +0200
+@@ -101,8 +101,8 @@
+     import time
+ 
+     # Set non-zero to write debug output to a file.
+-    DEBUG = 0
+-    DEBUGLOG = '/tmp/fcgi.log'
++    DEBUG = 10
++    DEBUGLOG = '/var/log/fcgi.log'
+ 
+     def _debug(level, msg):
+         if DEBUG < level:
+@@ -132,6 +132,8 @@
+         self._avail = 0 # Number of bytes currently available.
+ 
+         self._eof = False # True when server has sent EOF notification.
++        if __debug__:
++              _debug(1,"Class Input stream was instantiated")
+ 
+     def _shrinkBuffer(self):
+         """Gets rid of already read data (since we can't rewind)."""
+@@ -247,6 +249,9 @@
+         # Notifies Request thread that there is new data available.
+         self._lock = threading.Condition(lock)
+ 
++        if __debug__:
++              _debug(1,"Class MultiplexedInputStream stream was instantiated")
++
+     def _waitForData(self):
+         # Wait for notification from add_data().
+         self._lock.wait()
+@@ -288,6 +293,9 @@
+         self.dataWritten = False
+         self.closed = False
+ 
++        if __debug__:
++              _debug(1,"Class OutputStream was instantiated")
++
+     def _write(self, data):
+         length = len(data)
+         while length:
+@@ -369,7 +377,14 @@
+     def write(self, data):
+         if data:
+             self.dataWritten = True
+-        self._file.write(data)
++        if type(data) == bytes:
++            _data = data.decode()
++        elif type(data) == str:
++            _data = data
++        else :
++            raise TypeError("Attempt to write an unknown type of data to stdout")
++                
++        self._file.write(_data)
+ 
+     def writelines(self, lines):
+         for line in lines:
+@@ -381,9 +396,11 @@
+ def decode_pair(s, pos=0):
+     """
+     Decodes a name/value pair.
+-
++    
++    Input is a bytes object.
+     The number of bytes decoded as well as the name/value pair
+     are returned.
++    Name is of string type.
+     """
+     nameLength = s[pos]
+     if nameLength & 128:
+@@ -399,9 +416,9 @@
+     else:
+         pos += 1
+ 
+-    name = s[pos:pos+nameLength]
++    name = s[pos:pos+nameLength].decode()
+     pos += nameLength
+-    value = s[pos:pos+valueLength]
++    value = s[pos:pos+valueLength].decode()
+     pos += valueLength
+ 
+     return (pos, (name, value))
+@@ -410,27 +427,29 @@
+     """
+     Encodes a name/value pair.
+ 
++    name must be string, return value is bytes object.
+     The encoded string is returned.
+     """
+-    nameLength = len(name)
++    nameLength = len(name.encode())
+     if nameLength < 128:
+         s = bytes([nameLength])
+     else:
+         s = struct.pack('!L', nameLength | 0x80000000)
+ 
+-    valueLength = len(value)
++    valueLength = len(value.encode())
+     if valueLength < 128:
+         s += bytes([valueLength])
+     else:
+         s += struct.pack('!L', valueLength | 0x80000000)
+ 
+-    return s + name + value
++    return s + name.encode() + value.encode()
+     
+ class Record(object):
+     """
+     A FastCGI Record.
+ 
+     Used for encoding/decoding records.
++    One can think of it as of a packet being interchanged between web- and FCGI servers.
+     """
+     def __init__(self, type=FCGI_UNKNOWN_TYPE, requestId=FCGI_NULL_REQUEST_ID):
+         self.version = FCGI_VERSION_1
+@@ -440,6 +459,10 @@
+         self.paddingLength = 0
+         self.contentData = b''
+ 
++        if __debug__:
++             _debug(1,"New Record was created")
++
++    @staticmethod
+     def _recvall(sock, length):
+         """
+         Attempts to receive length bytes from a socket, blocking if necessary.
+@@ -449,7 +472,7 @@
+         recvLen = 0
+         while length:
+             try:
+-                data = sock.recv(length)
++                data = sock.recv(length) # return: bytes object, blocking mode
+             except socket.error as e:
+                 if e.args[0] == errno.EAGAIN:
+                     select.select([sock], [], [])
+@@ -463,7 +486,8 @@
+             recvLen += dataLen
+             length -= dataLen
+         return b''.join(dataList), recvLen
+-    _recvall = staticmethod(_recvall)
++    
++    # _recvall = staticmethod(_recvall)
+ 
+     def read(self, sock):
+         """Read and decode a Record from a socket."""
+@@ -498,11 +522,14 @@
+                 self._recvall(sock, self.paddingLength)
+             except:
+                 raise EOFError
++    
+ 
++    @staticmethod
+     def _sendall(sock, data):
+         """
+         Writes data to a socket and does not return until all the data is sent.
+         """
++        #data must be a bytes object 
+         length = len(data)
+         while length:
+             try:
+@@ -515,7 +542,8 @@
+                     raise
+             data = data[sent:]
+             length -= sent
+-    _sendall = staticmethod(_sendall)
++            
++    # _sendall = staticmethod(_sendall)
+ 
+     def write(self, sock):
+         """Encode and write a Record to a socket."""
+@@ -548,7 +576,7 @@
+     stderr, and data are free for your handler's use.
+     """
+     def __init__(self, conn, inputStreamClass, timeout):
+-        self._conn = conn
++        self._conn = conn # instance of Connection class
+         self._timeout = timeout
+ 
+         self.server = conn.server
+@@ -558,6 +586,9 @@
+         self.stderr = OutputStream(conn, self, FCGI_STDERR, buffered=True)
+         self.data = inputStreamClass(conn)
+ 
++        if __debug__:
++              _debug(1,"New request recored was created")
++
+     def timeout_handler(self, signum, frame):
+         self.stderr.write('Timeout Exceeded\n')
+         self.stderr.write("\n".join(traceback.format_stack(frame)))
+@@ -568,6 +599,7 @@
+     def run(self):
+         """Runs the handler, flushes the streams, and ends the request."""
+         # If there is a timeout
++        #import pdb; pdb.set_trace()
+         if self._timeout:
+             old_alarm = signal.signal(signal.SIGALRM, self.timeout_handler)
+             signal.alarm(self._timeout)
+@@ -620,6 +652,9 @@
+         self.stderr = sys.stderr
+         self.data = StringIO.StringIO()
+         self._timeout = 0
++
++        if __debug__:
++              _debug(1,"New CGIRequest was created")
+         
+     def _end(self, appStatus=0, protocolStatus=FCGI_REQUEST_COMPLETE):
+         sys.exit(appStatus)
+@@ -644,6 +679,9 @@
+         self._addr = addr
+         self.server = server
+         self._timeout = timeout
++	
++        if __debug__:
++              _debug(1,"New connection class was instantiated")
+ 
+         # Active Requests for this Connection, mapped by request ID.
+         self._requests = {}
+@@ -694,8 +732,12 @@
+             if r: break
+         if not self._keepGoing:
+             return
++        
++        if __debug__:
++               _debug(1,"New incoming data in socket is detected")
+         rec = Record()
+         rec.read(self._sock)
++	#import pdb; pdb.set_trace()
+ 
+         if rec.type == FCGI_GET_VALUES:
+             self._do_get_values(rec)
+@@ -752,6 +794,7 @@
+ 
+         pos = 0
+         while pos < inrec.contentLength:
++            # name must be string type
+             pos, (name, value) = decode_pair(inrec.contentData, pos)
+             cap = self.server.capability.get(name)
+             if cap is not None:
+@@ -802,7 +845,7 @@
+                 pos = 0
+                 while pos < inrec.contentLength:
+                     pos, (name, value) = decode_pair(inrec.contentData, pos)
+-                    req.params[name.decode('latin-1')] = value.decode('latin-1')
++                    req.params[name] = value
+             else:
+                 self._start_request(req)
+ 
+@@ -969,6 +1012,9 @@
+ 
+         self._bindAddress = bindAddress
+         self._umask = umask
++
++        if __debug__:
++              _debug(1,"Class BaseFCGIServer was instantiated")
+         
+         # Used to force single-threadedness
+         self._appLock = _thread.allocate_lock()
+@@ -1027,6 +1073,8 @@
+                 isFCGI = True
+                 try:
+                     sock.getpeername()
++                    if __debug__:
++                        _debug(1,"socket was acquired from fd, FastCGI mode is in effect")
+                 except socket.error as e:
+                     if e.args[0] == errno.ENOTSOCK:
+                         # Not a socket, assume CGI context.
+@@ -1036,6 +1084,8 @@
+ 
+             if not isFCGI:
+                 req = self.cgirequest_class(self)
++                if __debug__:
++                        _debug(1,"conventional CGI mode is in effect")
+                 req.run()
+                 sys.exit(0)
+         else:
+@@ -1104,7 +1154,7 @@
+ 
+         def write(data):
+             if type(data) is str:
+-                data = data.encode('latin-1')
++                data = data.encode()
+ 
+             assert type(data) is bytes, 'write() argument must be bytes'
+             assert headers_set, 'write() before start_response()'
+@@ -1120,7 +1170,7 @@
+                     try:
+                         if len(result) == 1:
+                             responseHeaders.append((b'Content-Length',
+-                                                    str(len(data)).encode('latin-1')))
++                                                    str(len(data)).encode()))
+                     except:
+                         pass
+                 s = b'Status: ' + status + b'\r\n'
+@@ -1144,9 +1194,9 @@
+                 assert not headers_set, 'Headers already set!'
+ 
+             if type(status) is str:
+-                status = status.encode('latin-1')
++                status = status.encode()
+ 
+-            assert type(status) is bytes, 'Status must be a string'
++            assert type(status) is bytes, 'Status must be a bytes string'
+             assert len(status) >= 4, 'Status must be at least 4 characters'
+             assert int(status[:3]), 'Status must begin with 3-digit code'
+             assert status[3] == 0x20, 'Status must have a space after code'
+@@ -1154,9 +1204,9 @@
+             new_response_headers = []
+             for name,val in response_headers:
+                 if type(name) is str:
+-                    name = name.encode('latin-1')
++                    name = name.encode()
+                 if type(val) is str:
+-                    val = val.encode('latin-1')
++                    val = val.encode()
+ 
+                 assert type(name) is bytes, 'Header name "%s" must be bytes' % name
+                 assert type(val) is bytes, 'Value of header "%s" must be bytes' % name

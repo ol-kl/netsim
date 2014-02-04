@@ -1,0 +1,5 @@
+PACKAGES aptitude
+
+libnss-ldapd
+libpam-krb5
+unscd

@@ -1,0 +1,25 @@
+PACKAGES aptitude
+
+bsd-mailx
+ca-certificates
+connect-proxy
+localepurge
+ntpdate
+ntp
+krb5-user
+kstart
+ldap-utils
+libsasl2-modules-gssapi-mit
+locales
+locales-all
+postfix
+resolvconf
+xfsdump
+
+daemontools
+daemontools-run
+ucspi-proxy
+ucspi-unix
+ucspi-tcp
+ucspi-tcp-ipv6
+#djbdns

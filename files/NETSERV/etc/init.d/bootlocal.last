@@ -1,0 +1,33 @@
+#!/bin/bash
+# This file is NOT upgraded during system upgrades.
+# You can use it to customize the boot process.
+# bootlocal.last is executed in runlevel '2', at the very end.
+################################################################################
+set -u
+
+[ -e /etc/grml_colors ] && . /etc/grml_colors
+if [ -e /etc/iptables.ruleset ]; then
+	iptables-restore < /etc/iptables.ruleset
+	echo "$GREEN[*]$WHITE IPtables rules were set"
+else
+	echo "$RED[*]$WHITE Failed to load iptables ruleset, check file /etc/iptables.ruleset"
+fi
+
+#tc qdisc add dev eth0.20 ingress
+#tc filter add dev eth0.20 parent ffff: protocol ip u32 match u8 0 0 action mirred egress mirror dev eth0.40
+tc qdisc add dev eth0.20 root handle 1:0 netem loss 5% 20% duplicate 7%
+tc qdisc add dev eth0.20 parent 1:1 handle 11:0 prio
+tc filter add dev eth0.20 parent 11:0 protocol ip u32 match u8 0 0 action mirred egress mirror dev eth0.40
+
+#tc qdisc add dev eth0.30 ingress
+#tc filter add dev eth0.30 parent ffff: protocol ip u32 match u8 0 0 action mirred egress mirror dev eth0.40
+tc qdisc add dev eth0.30 root handle 1:0 netem delay 10ms 7ms corrupt 2% duplicate 4% loss 3% 25%
+#tc qdisc add dev eth0.30 root handle 1:0 netem delay 50ms
+tc qdisc add dev eth0.30 parent 1:1 handle 11:0 prio
+tc filter add dev eth0.30 parent 11:0 protocol ip u32 match u8 0 0 action mirred egress mirror dev eth0.40
+
+echo "$GREEN[*]$WHITE Traffic mirroring {eth0.20,eth0.30} -> eth0.40 has been configured $NORMAL"
+
+sysctl net.ipv4.ip_forward=1 &>/dev/null
+
+## END OF FILE #################################################################

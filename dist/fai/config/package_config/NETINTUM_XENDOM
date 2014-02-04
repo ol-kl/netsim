@@ -1,0 +1,5 @@
+PACKAGES aptitude I386
+linux-image-xen-686
+
+PACKAGES aptitude AMD64
+linux-image-xen-amd64

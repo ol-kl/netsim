@@ -1,0 +1,14 @@
+#!/bin/sh
+# This file is NOT upgraded during system upgrades.
+# You can use it to customize the boot process.
+# bootlocal.last is executed in runlevel '2', at the very end.
+################################################################################
+echo "Re-reading /etc/network/interfaces"
+/etc/init.d/networking restart
+sysctl net.ipv4.conf.all.proxy_arp=1
+sysctl net.ipv4.conf.all.proxy_arp_pvlan=1
+sysctl net.ipv4.ip_forward=1
+ip route add 10.0.2.50/32 via 10.0.1.2
+ip route add 10.0.1.50/32 via 10.0.2.2
+iptables-restore < /etc/iptables.ruleset
+## END OF FILE #################################################################

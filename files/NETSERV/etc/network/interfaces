@@ -1,0 +1,37 @@
+auto lo
+iface lo inet loopback
+allow-hotplug eth0
+
+# Here follows configuration of server interfaces. eth0.10 is supposed to be connected to Internet, the rest are sublinks for appropriate vlans according 
+# to current project topology
+
+auto eth0.10
+auto eth0.20
+auto eth0.30
+auto eth0.40
+auto eth0.99
+iface eth0.10 inet dhcp 
+iface eth0.99 inet static
+	address 10.0.3.2
+	netmask 255.255.255.0
+	network 10.0.3.0
+	broadcast 10.0.3.255
+	vlan_raw_device eth0
+iface eth0.30 inet static
+	address 10.0.2.2
+	netmask 255.255.255.0
+	network 10.0.2.0
+	broadcast 10.0.2.255
+	vlan_raw_device eth0
+iface eth0.20 inet static
+	address 10.0.1.2
+	netmask 255.255.255.0
+	network 10.0.1.0
+	broadcast 10.0.1.255
+	vlan_raw_device eth0
+iface eth0.40 inet static
+	address 192.168.5.5
+	netmask 255.255.255.252
+	network 192.168.5.4
+	broadcast 192.168.5.7
+	vlan_raw_device eth0

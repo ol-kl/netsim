@@ -1,0 +1,87 @@
+#!/bin/bash
+
+# vim: ft=sh noet sw=4 ts=4
+
+set -e
+
+declare NL='
+'
+
+notice() {
+        echo "${@:-EMPTY_NOTICE}" >&2
+}
+
+qwe() {
+        notice "${@:-ERROR}"
+        exit 1
+}
+
+declare BASENAME="$(readlink -f "$0")"
+declare BASEDIR="$(dirname "$BASENAME")"
+
+DESTDIR="$1"
+SOURCE="$2"
+
+SOURCES="$(rsync rsync://deconstruct.net.in.tum.de/)"
+
+
+if [ -z "$SOURCE" ]; then
+	echo "Usage: $(basename $0) <DESTDIR> <SOURCE>" >&2
+	echo "SOURCES:" >&2
+	echo >&2
+	echo "$SOURCES" >&2
+	exit "$?"
+fi
+
+SOURCES=( $(awk '{print $1}' <<< "$SOURCES") )
+
+DOIT=
+for s in "${SOURCES[@]}"; do
+	if [ "$SOURCE" == "$s" ]; then
+		DOIT=Y
+		break
+	fi
+done
+
+[ -n "$DOIT" ] || qwe "$SOURCE unknown"
+DOIT=
+
+if [ -n "$DESTDIR" ]; then
+	DESTDIR="$(readlink -f "$DESTDIR")"
+	[ -d "$DESTDIR" ] || qwe "no dir: $DESTDIR"
+else
+	qwe "no DESTDIR"
+fi
+
+rsync -aHAX "rsync://deconstruct.net.in.tum.de/${SOURCE}/" "$DESTDIR" || qwe "rsync failed"
+
+
+mkdir -p -m 755 "${DESTDIR}/etc" "${DESTDIR}/etc/ssh"
+mkdir -p -m 700 "${DESTDIR}/root"
+mkdir -p -m 700 "${DESTDIR}/root/.ssh"
+for f in /root/.ssh/authorized_keys /root/.k5login /etc/krb5.keytab \
+	/etc/ssh/ssh*_key /etc/ssh/ssh*_key.pub \
+	/etc/hostname /etc/mailname /etc/hosts
+do
+
+	[ -r "$f" ] && cp -a "$f" -T "${DESTDIR}${f}"
+done
+
+[ -r /etc/krb5.keytab -a -f "${DESTDIR}/etc/ssh/sshd_config" ] && sed -i \
+	-e 's/^[# \t]*GSSAPIAuthentication.*$/GSSAPIAuthentication yes/' \
+	-e 's/^[# \t]*GSSAPICleanupCredentials.*$/GSSAPICleanupCredentials yes/' \
+	"${DESTDIR}/etc/ssh/sshd_config"
+
+
+mkdir -p "${DESTDIR}/etc/network"
+cat <<-EOF > "${DESTDIR}/etc/network/interfaces"
+	auto lo
+	iface lo inet loopback
+
+	allow-hotplug eth0
+	iface eth0 inet manual
+	  dns-nameservers 131.159.14.206 131.159.14.208
+	  dns-domain net.in.tum.de
+EOF
+
+chroot "${DESTDIR}" newaliases

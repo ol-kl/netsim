@@ -1,0 +1,6 @@
+syntax: glob
+*~
+__pycache__
+build
+dist
+flup.egg-info

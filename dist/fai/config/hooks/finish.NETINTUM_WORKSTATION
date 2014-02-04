@@ -1,0 +1,11 @@
+#!/bin/bash
+
+set -u
+set -e
+
+if [ -d $target/proc/sys/fs/binfmt_misc ]; then
+	umount $target/proc/sys/fs/binfmt_misc >/dev/null 2>&1 || true
+fi
+
+## END OF FILE #################################################################
+# vim:ft=sh expandtab ai tw=80 tabstop=4 shiftwidth=3

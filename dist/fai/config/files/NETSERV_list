@@ -1,0 +1,13 @@
+/srv/tftp/pxelinux.cfg/0A0001
+/srv/tftp/pxelinux.cfg/0A0002
+/srv/tftp/pxelinux.0
+/etc/init.d/netsim_start.sh
+/etc/init.d/partition.sh
+/etc/init.d/partition.awk
+/etc/init.d/partition.bash
+/etc/network/interfaces
+/etc/noprompt
+/etc/dhcp/dhcpd.conf
+/etc/apache2/apache2.conf
+/etc/apache2/envvars
+/etc/apache2/httpd.conf

@@ -1,0 +1,2 @@
+xdm shared/default-x-display-manager select gdm
+libpam-runtime libpam-runtime/profiles multiselect krb5 unix mkhomedir group ecryptfs-utils capability
